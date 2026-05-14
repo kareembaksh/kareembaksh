@@ -103,20 +103,72 @@ export default function Home() {
       <section className="py-12 bg-white border-y border-zinc-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { icon: "🚚", title: "Free Shipping", desc: "On every order, always" },
-              { icon: "↩️", title: "Easy Returns", desc: "Hassle-free 30-day returns" },
-              { icon: "🔒", title: "Secure Checkout", desc: "Your data is protected" },
-              { icon: "⭐", title: "Top Rated", desc: "Thousands of happy customers" },
-            ].map(({ icon, title, desc }) => (
-              <div key={title} className="flex items-start gap-4">
-                <span className="text-3xl">{icon}</span>
-                <div>
-                  <p className="font-semibold text-zinc-900 text-sm">{title}</p>
-                  <p className="text-zinc-400 text-xs mt-0.5">{desc}</p>
-                </div>
+
+            {/* Free Shipping */}
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-orange-50 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="2" y="12" width="24" height="16" rx="2" fill="#FFA726"/>
+                  <rect x="6" y="16" width="16" height="8" rx="1" fill="#FFE0B2"/>
+                  <path d="M26 16h6l4 8v4h-10V16z" fill="#EF6C00"/>
+                  <rect x="8" y="16" width="10" height="8" rx="1" fill="#64B5F6"/>
+                  <circle cx="10" cy="29" r="3" fill="#37474F"/>
+                  <circle cx="10" cy="29" r="1.5" fill="#90A4AE"/>
+                  <circle cx="30" cy="29" r="3" fill="#37474F"/>
+                  <circle cx="30" cy="29" r="1.5" fill="#90A4AE"/>
+                </svg>
               </div>
-            ))}
+              <div>
+                <p className="font-semibold text-zinc-900 text-sm">Free Shipping</p>
+                <p className="text-zinc-400 text-xs mt-0.5">On every order, always</p>
+              </div>
+            </div>
+
+            {/* Easy Returns */}
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="6" y="8" width="28" height="24" rx="4" fill="#42A5F5"/>
+                  <path d="M14 20 L20 14 L20 18 L26 18 L26 22 L20 22 L20 26 Z" fill="white"/>
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-zinc-900 text-sm">Easy Returns</p>
+                <p className="text-zinc-400 text-xs mt-0.5">Hassle-free 30-day returns</p>
+              </div>
+            </div>
+
+            {/* Secure Checkout */}
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="10" y="18" width="20" height="16" rx="3" fill="#FFA726"/>
+                  <rect x="13" y="21" width="14" height="10" rx="2" fill="#FFE0B2"/>
+                  <path d="M14 18v-5a6 6 0 0112 0v5" stroke="#795548" strokeWidth="2.5" strokeLinecap="round"/>
+                  <circle cx="20" cy="26" r="2.5" fill="#E65100"/>
+                  <rect x="19" y="26" width="2" height="3" rx="1" fill="#E65100"/>
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-zinc-900 text-sm">Secure Checkout</p>
+                <p className="text-zinc-400 text-xs mt-0.5">Your data is protected</p>
+              </div>
+            </div>
+
+            {/* Top Rated */}
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-yellow-50 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M20 6 L23.5 14.5 L33 15.3 L26.5 21.5 L28.5 31 L20 26.5 L11.5 31 L13.5 21.5 L7 15.3 L16.5 14.5 Z" fill="#FFD600" stroke="#F9A825" strokeWidth="1"/>
+                  <path d="M20 9 L22.8 15.8 L30 16.5 L24.7 21.3 L26.4 28.5 L20 25 L13.6 28.5 L15.3 21.3 L10 16.5 L17.2 15.8 Z" fill="#FFEE58"/>
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-zinc-900 text-sm">Top Rated</p>
+                <p className="text-zinc-400 text-xs mt-0.5">Thousands of happy customers</p>
+              </div>
+            </div>
+
           </div>
         </div>
       </section>

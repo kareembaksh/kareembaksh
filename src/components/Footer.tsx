@@ -6,9 +6,17 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           <div>
-            <h3 className="text-white font-bold text-lg mb-3">
-              Kareem<span className="text-rose-400">Baksh</span>
-            </h3>
+            <div className="flex items-center gap-2.5 mb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-9 h-9 flex-shrink-0">
+                <rect width="32" height="32" rx="7" fill="#f43f5e"/>
+                <rect x="16" width="16" height="32" fill="#18181b"/>
+                <text x="2" y="23" fontFamily="Arial Black, Arial, sans-serif" fontSize="15" fontWeight="900" fill="white">K</text>
+                <text x="17" y="23" fontFamily="Arial Black, Arial, sans-serif" fontSize="15" fontWeight="900" fill="white">B</text>
+              </svg>
+              <h3 className="text-white font-bold text-lg">
+                Kareem<span className="text-rose-400">Baksh</span>
+              </h3>
+            </div>
             <p className="text-sm leading-relaxed">
               Premium products curated for modern living. Quality you can trust, style you will love.
             </p>
