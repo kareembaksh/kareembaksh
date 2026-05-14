@@ -73,7 +73,7 @@ export default function HeroSlider() {
 
   return (
     <section className={`relative bg-gradient-to-br ${slide.bg} overflow-hidden transition-all duration-700`}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
 
           {/* Text */}

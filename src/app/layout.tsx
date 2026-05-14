@@ -8,8 +8,8 @@ import Footer from "@/components/Footer";
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
 export const metadata: Metadata = {
-  title: "KareemBaksh — Premium Women's Bags, Skincare & More",
-  description: "Shop premium women's bags, hand sanitizers, skincare, and accessories at KareemBaksh. Free shipping on all orders.",
+  title: "Kareem Baksh Store",
+  description: "Shop premium women's bags, beauty, home essentials, kitchen, and outdoor gear at Kareem Baksh Store. Free shipping on all orders.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

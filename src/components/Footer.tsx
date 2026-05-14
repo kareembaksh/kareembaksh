@@ -29,10 +29,11 @@ export default function Footer() {
           <div>
             <h4 className="text-white font-semibold mb-3 text-sm uppercase tracking-wider">Support</h4>
             <ul className="space-y-2 text-sm">
-              <li><Link href="#" className="hover:text-white transition-colors">Shipping Policy</Link></li>
-              <li><Link href="#" className="hover:text-white transition-colors">Returns & Refunds</Link></li>
-              <li><Link href="#" className="hover:text-white transition-colors">FAQ</Link></li>
-              <li><Link href="#" className="hover:text-white transition-colors">Track Order</Link></li>
+              <li><Link href="/support" className="hover:text-white transition-colors">Support</Link></li>
+              <li><Link href="/shipping" className="hover:text-white transition-colors">Shipping Policy</Link></li>
+              <li><Link href="/returns" className="hover:text-white transition-colors">Returns & Refunds</Link></li>
+              <li><Link href="/faq" className="hover:text-white transition-colors">FAQ</Link></li>
+              <li><Link href="/track-order" className="hover:text-white transition-colors">Track Order</Link></li>
             </ul>
           </div>
 
