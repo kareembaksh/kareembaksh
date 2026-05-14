@@ -135,7 +135,7 @@ const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month:"
 const Stars = ({ n }: { n: number }) => <span className="text-amber-400 text-sm">{"★".repeat(n)}{"☆".repeat(5-n)}</span>;
 
 // ── Admin panel ────────────────────────────────────────────────────────────────
-type Page = "dashboard"|"products"|"add"|"orders"|"order-detail"|"reviews";
+type Page = "dashboard"|"products"|"add"|"orders"|"order-detail"|"reviews"|"settings";
 
 export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
@@ -318,6 +318,7 @@ export default function AdminPanel() {
             <NavBtn k="products" label="Products"    icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
             <NavBtn k="orders"   label="Orders"      icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" badge={stats.pending||undefined}/>
             <NavBtn k="reviews"  label="Reviews"     icon="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" badge={stats.pendingRevs||undefined}/>
+            <NavBtn k="settings" label="Settings"    icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
           </nav>
 
           <div className="mt-auto space-y-1 pt-4 border-t border-zinc-100">
@@ -684,6 +685,139 @@ export default function AdminPanel() {
                 {filteredReviews.length===0&&<div className="bg-white rounded-2xl border border-zinc-200 py-16 text-center text-zinc-400 text-sm">No reviews match your filter.</div>}
               </div>
             </>
+          )}
+
+          {/* ── SETTINGS ─────────────────────────────────────────────── */}
+          {page==="settings"&&(
+            <div className="max-w-2xl space-y-6">
+              <h2 className="text-xl font-bold text-zinc-900">Settings</h2>
+
+              {/* Stripe Status Card */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
+                  <div className="w-9 h-9 bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-violet-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-bold text-zinc-900 text-sm">Stripe Payments</p>
+                    <p className="text-xs text-zinc-400">Configure live payment processing</p>
+                  </div>
+                  <div className="ml-auto">
+                    {process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ? (
+                      <span className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full">
+                        {process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY.startsWith("pk_live") ? "Live" : "Test Mode"}
+                      </span>
+                    ) : (
+                      <span className="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full">Not Configured</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-6 space-y-5">
+                  <p className="text-sm text-zinc-600">
+                    To accept real payments, add the following environment variables in your{" "}
+                    <a href="https://vercel.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-violet-600 font-semibold hover:underline">Vercel Dashboard</a>{" "}
+                    under <strong>Settings → Environment Variables</strong>.
+                  </p>
+
+                  {/* Env var rows */}
+                  {[
+                    { key:"NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", label:"Publishable Key", hint:"Starts with pk_live_...", secret:false },
+                    { key:"STRIPE_SECRET_KEY",                  label:"Secret Key",      hint:"Starts with sk_live_...", secret:true },
+                    { key:"STRIPE_WEBHOOK_SECRET",              label:"Webhook Secret",  hint:"Starts with whsec_...",  secret:true },
+                    { key:"NEXT_PUBLIC_BASE_URL",               label:"Site URL",        hint:"https://www.kareembaksh.com", secret:false },
+                  ].map(({key, label, hint, secret})=>(
+                    <div key={key} className="flex items-start gap-3 p-3 bg-zinc-50 rounded-xl">
+                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${process.env[key] || (!secret && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) ? "bg-green-400" : "bg-zinc-300"}`}/>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-zinc-800 font-mono">{key}</p>
+                        <p className="text-xs text-zinc-400 mt-0.5">{label} — {hint}</p>
+                      </div>
+                      {secret && <span className="text-xs bg-zinc-200 text-zinc-500 px-2 py-0.5 rounded font-medium">Server-only</span>}
+                    </div>
+                  ))}
+
+                  {/* Where to find keys */}
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-2">
+                    <p className="text-xs font-bold text-violet-800">Where to find your Stripe keys:</p>
+                    <ol className="text-xs text-violet-700 space-y-1 list-decimal list-inside">
+                      <li>Go to <strong>dashboard.stripe.com → Developers → API Keys</strong></li>
+                      <li>Copy your <strong>Publishable key</strong> and <strong>Secret key</strong></li>
+                      <li>For the Webhook Secret: go to <strong>Developers → Webhooks → Add endpoint</strong></li>
+                      <li>Set endpoint URL to: <code className="bg-violet-100 px-1 rounded">https://www.kareembaksh.com/api/webhook</code></li>
+                      <li>Select event: <code className="bg-violet-100 px-1 rounded">checkout.session.completed</code></li>
+                      <li>Copy the <strong>Signing secret</strong> (whsec_...)</li>
+                    </ol>
+                  </div>
+
+                  <a
+                    href="https://dashboard.stripe.com/apikeys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 w-full justify-center py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    Open Stripe Dashboard
+                  </a>
+                </div>
+              </div>
+
+              {/* Promo codes card */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
+                  <div className="w-9 h-9 bg-rose-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-bold text-zinc-900 text-sm">Active Promo Codes</p>
+                    <p className="text-xs text-zinc-400">Codes customers can use at checkout</p>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div className="space-y-2">
+                    {[
+                      { code:"WELCOME10", desc:"10% off — Welcome discount" },
+                      { code:"KB15",      desc:"15% off" },
+                      { code:"SAVE5",     desc:"$5 off any order" },
+                      { code:"KBVIP",     desc:"20% VIP discount" },
+                      { code:"SUMMER",    desc:"12% Summer sale" },
+                    ].map(({code,desc})=>(
+                      <div key={code} className="flex items-center gap-3 px-3 py-2.5 bg-zinc-50 rounded-xl">
+                        <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-1 rounded">{code}</span>
+                        <span className="text-xs text-zinc-500">{desc}</span>
+                        <span className="ml-auto text-xs bg-green-100 text-green-600 font-semibold px-2 py-0.5 rounded-full">Active</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-4">To change promo codes, edit <code className="bg-zinc-100 px-1 rounded">src/app/checkout/page.tsx</code> → PROMO_CODES object.</p>
+                </div>
+              </div>
+
+              {/* Contact card */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
+                  <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
+                  <div><p className="font-bold text-zinc-900 text-sm">Store Info</p><p className="text-xs text-zinc-400">Business details</p></div>
+                </div>
+                <div className="p-6 space-y-2 text-sm text-zinc-600">
+                  <p><span className="font-medium text-zinc-800">Business:</span> Kareem Baksh LLC</p>
+                  <p><span className="font-medium text-zinc-800">Address:</span> 30 N Gould St #55212, Sheridan, WY 82801, USA</p>
+                  <p><span className="font-medium text-zinc-800">Phone:</span> 307-430-1170</p>
+                  <p><span className="font-medium text-zinc-800">Email:</span> admin@kareembaksh.com</p>
+                  <p><span className="font-medium text-zinc-800">Site:</span> kareembaksh.com</p>
+                </div>
+              </div>
+            </div>
           )}
 
         </main>

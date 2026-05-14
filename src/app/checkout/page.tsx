@@ -25,48 +25,17 @@ function genOrderId() {
   return `KB-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 }
 
-async function sendEmails(order: Record<string, unknown>, form: FormData, items: { name: string; price: number; quantity: number }[]) {
-  const serviceId      = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID;
-  const publicKey      = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY;
-  const orderTemplate  = process.env.NEXT_PUBLIC_EMAILJS_ORDER_TEMPLATE;
-  const adminTemplate  = process.env.NEXT_PUBLIC_EMAILJS_ADMIN_TEMPLATE;
-  if (!serviceId || !publicKey) return;
-
-  const emailjs = (await import("@emailjs/browser")).default;
-  emailjs.init(publicKey);
-
-  const itemsList = items.map(i => `${i.quantity}x ${i.name} — $${(i.price * i.quantity).toFixed(2)}`).join("\n");
-  const params = {
-    order_id: order.id,
-    customer_name: form.name,
-    customer_email: form.email,
-    customer_phone: form.phone,
-    shipping_address: `${form.address}, ${form.city}, ${form.state} ${form.zip}, ${form.country}`,
-    items_list: itemsList,
-    order_total: `$${(order.total as number).toFixed(2)}`,
-    order_notes: form.notes || "—",
-  };
-
-  if (orderTemplate) {
-    await emailjs.send(serviceId, orderTemplate, { ...params, to_email: form.email }).catch(() => {});
-  }
-  if (adminTemplate) {
-    await emailjs.send(serviceId, adminTemplate, { ...params, to_email: "admin@kareembaksh.com" }).catch(() => {});
-  }
-}
-
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
-  const [form, setForm]       = useState<FormData>(EMPTY);
-  const [errors, setErrors]   = useState<Partial<FormData>>({});
-  const [submitted, setSubmitted] = useState(false);
-  const [orderId, setOrderId]     = useState("");
+  const [form, setForm]     = useState<FormData>(EMPTY);
+  const [errors, setErrors] = useState<Partial<FormData>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   // Promo code
-  const [promoInput, setPromoInput] = useState("");
+  const [promoInput, setPromoInput]     = useState("");
   const [promoApplied, setPromoApplied] = useState<typeof PROMO_CODES[string] | null>(null);
-  const [promoError, setPromoError] = useState("");
+  const [promoError, setPromoError]     = useState("");
 
   const discountAmount = promoApplied
     ? promoApplied.type === "percent"
@@ -75,7 +44,9 @@ export default function CheckoutPage() {
     : 0;
   const finalTotal = totalPrice - discountAmount;
 
-  if (items.length === 0 && !submitted) {
+  const stripeConfigured = !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+
+  if (items.length === 0) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-4 text-zinc-400">
         <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -89,13 +60,8 @@ export default function CheckoutPage() {
 
   function applyPromo() {
     const code = promoInput.trim().toUpperCase();
-    if (PROMO_CODES[code]) {
-      setPromoApplied(PROMO_CODES[code]);
-      setPromoError("");
-    } else {
-      setPromoApplied(null);
-      setPromoError("Invalid promo code");
-    }
+    if (PROMO_CODES[code]) { setPromoApplied(PROMO_CODES[code]); setPromoError(""); }
+    else { setPromoApplied(null); setPromoError("Invalid promo code"); }
   }
 
   function validate() {
@@ -123,63 +89,47 @@ export default function CheckoutPage() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSubmitting(true);
-    const id = genOrderId();
-    const order = {
-      id,
-      date: new Date().toISOString(),
-      customer: { name: form.name, email: form.email, phone: form.phone, address: form.address, city: form.city, state: form.state, zip: form.zip },
-      items: items.map(i => ({ productId: i.id, name: i.name, price: i.price, qty: i.quantity, image: i.image })),
-      total: finalTotal,
-      status: "Pending",
-      tracking: "",
-      notes: [form.notes, promoApplied ? `Promo: ${promoInput.toUpperCase()} (${promoApplied.label})` : ""].filter(Boolean).join(" | "),
-    };
+    setSubmitError("");
+
+    const orderId = genOrderId();
+    const discountPercent = promoApplied?.type === "percent" ? promoApplied.discount : 0;
 
     try {
-      const existing = JSON.parse(localStorage.getItem("kb_orders") || "[]");
-      localStorage.setItem("kb_orders", JSON.stringify([order, ...existing]));
-    } catch { /* localStorage unavailable */ }
+      const res = await fetch("/api/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: items.map(i => ({ name: i.name, price: i.price, quantity: i.quantity, image: i.image })),
+          customer: { ...form, promo: promoInput.toUpperCase() },
+          orderId,
+          discount: discountPercent,
+        }),
+      });
 
-    await sendEmails(order, form, items).catch(() => {});
+      const data = await res.json();
 
-    setOrderId(id);
-    clearCart();
-    setSubmitted(true);
-    setSubmitting(false);
-  }
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Could not create checkout session");
+      }
 
-  if (submitted) {
-    return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-4">
-        <div className="max-w-md w-full text-center">
-          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-            <svg className="w-10 h-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-3xl font-bold text-zinc-900 mb-2">Order Placed!</h1>
-          <p className="text-zinc-500 mb-1">Thank you, <span className="font-semibold text-zinc-700">{form.name}</span>.</p>
-          <p className="text-zinc-500 mb-6">
-            Your order <span className="font-bold text-rose-500">{orderId}</span> has been received.
-            We&apos;ll contact you at <span className="font-semibold">{form.email}</span> with payment details.
-          </p>
-          <div className="bg-zinc-50 rounded-2xl p-4 text-left text-sm text-zinc-600 mb-8 space-y-1.5">
-            <p><span className="font-medium text-zinc-800">Shipping to:</span> {form.address}, {form.city}, {form.state} {form.zip}</p>
-            <p><span className="font-medium text-zinc-800">Phone:</span> {form.phone}</p>
-            <p><span className="font-medium text-zinc-800">Order total:</span> <span className="text-zinc-900 font-bold">${finalTotal.toFixed(2)}</span></p>
-            <p><span className="font-medium text-zinc-800">Estimated delivery:</span> 7–15 business days</p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link href="/products" className="px-6 py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors text-sm">
-              Continue Shopping
-            </Link>
-            <Link href="/track-order" className="px-6 py-3 border border-zinc-200 hover:bg-zinc-50 text-zinc-700 font-semibold rounded-xl transition-colors text-sm">
-              Track Order
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
+      // Save order draft to localStorage before redirect
+      try {
+        const order = {
+          id: orderId, date: new Date().toISOString(),
+          customer: { name: form.name, email: form.email, phone: form.phone, address: form.address, city: form.city, state: form.state, zip: form.zip },
+          items: items.map(i => ({ productId: i.id, name: i.name, price: i.price, qty: i.quantity, image: i.image })),
+          total: finalTotal, status: "Pending", tracking: "",
+          notes: [form.notes, promoApplied ? `Promo: ${promoInput.toUpperCase()}` : ""].filter(Boolean).join(" | "),
+        };
+        const existing = JSON.parse(localStorage.getItem("kb_orders") || "[]");
+        localStorage.setItem("kb_orders", JSON.stringify([order, ...existing]));
+      } catch { /* ignore */ }
+
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setSubmitting(false);
+    }
   }
 
   const Field = ({ label, name, type = "text", placeholder, half }: { label: string; name: keyof FormData; type?: string; placeholder?: string; half?: boolean }) => (
@@ -195,7 +145,6 @@ export default function CheckoutPage() {
 
   return (
     <main className="min-h-screen bg-zinc-50">
-      {/* Breadcrumb */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <nav className="flex items-center gap-2 text-sm text-zinc-400">
           <Link href="/" className="hover:text-zinc-600">Home</Link>
@@ -208,7 +157,7 @@ export default function CheckoutPage() {
         <h1 className="text-2xl font-bold text-zinc-900 mb-8">Checkout</h1>
 
         <form onSubmit={handleSubmit} className="grid lg:grid-cols-3 gap-8">
-          {/* Left: form */}
+          {/* Left */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <h2 className="text-base font-bold text-zinc-900 mb-4">Contact Information</h2>
@@ -240,23 +189,18 @@ export default function CheckoutPage() {
             </div>
 
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-base font-bold text-zinc-900 mb-4">
-                Order Notes <span className="text-zinc-400 font-normal text-sm">(optional)</span>
-              </h2>
-              <textarea
-                name="notes" value={form.notes} onChange={handleChange}
-                placeholder="Special instructions, delivery notes..."
-                rows={3}
-                className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 resize-none"
-              />
+              <h2 className="text-base font-bold text-zinc-900 mb-4">Order Notes <span className="text-zinc-400 font-normal text-sm">(optional)</span></h2>
+              <textarea name="notes" value={form.notes} onChange={handleChange} placeholder="Special instructions, delivery notes..." rows={3}
+                className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 resize-none" />
             </div>
           </div>
 
-          {/* Right: order summary */}
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl p-6 shadow-sm sticky top-4">
-              <h2 className="text-base font-bold text-zinc-900 mb-4">Order Summary</h2>
-              <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
+          {/* Right: summary */}
+          <div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm sticky top-4 space-y-4">
+              <h2 className="text-base font-bold text-zinc-900">Order Summary</h2>
+
+              <div className="space-y-3 max-h-60 overflow-y-auto">
                 {items.map(item => (
                   <div key={item.id} className="flex gap-3 items-center">
                     <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-zinc-100 flex-shrink-0">
@@ -271,8 +215,8 @@ export default function CheckoutPage() {
                 ))}
               </div>
 
-              {/* Promo code */}
-              <div className="border-t border-zinc-100 pt-4 mb-4">
+              {/* Promo */}
+              <div className="border-t border-zinc-100 pt-4">
                 <label className="block text-xs font-medium text-zinc-600 mb-1.5">Promo Code</label>
                 {promoApplied ? (
                   <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -284,14 +228,10 @@ export default function CheckoutPage() {
                   </div>
                 ) : (
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={promoInput}
-                      onChange={e => { setPromoInput(e.target.value.toUpperCase()); setPromoError(""); }}
+                    <input type="text" value={promoInput} onChange={e => { setPromoInput(e.target.value.toUpperCase()); setPromoError(""); }}
                       onKeyDown={e => e.key === "Enter" && (e.preventDefault(), applyPromo())}
                       placeholder="Enter code"
-                      className={`flex-1 px-3 py-2 text-sm border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 ${promoError ? "border-red-400" : "border-zinc-200"}`}
-                    />
+                      className={`flex-1 px-3 py-2 text-sm border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 ${promoError ? "border-red-400" : "border-zinc-200"}`} />
                     <button type="button" onClick={applyPromo} className="px-3 py-2 bg-zinc-900 hover:bg-zinc-700 text-white text-xs font-semibold rounded-xl transition-colors">Apply</button>
                   </div>
                 )}
@@ -299,52 +239,50 @@ export default function CheckoutPage() {
               </div>
 
               {/* Totals */}
-              <div className="space-y-2 text-sm border-t border-zinc-100 pt-4">
-                <div className="flex justify-between text-zinc-500">
-                  <span>Subtotal</span>
-                  <span className="font-medium text-zinc-800">${totalPrice.toFixed(2)}</span>
-                </div>
+              <div className="border-t border-zinc-100 pt-4 space-y-2 text-sm">
+                <div className="flex justify-between text-zinc-500"><span>Subtotal</span><span className="font-medium text-zinc-800">${totalPrice.toFixed(2)}</span></div>
                 {promoApplied && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount ({promoInput.toUpperCase()})</span>
                     <span className="font-medium">-${discountAmount.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-zinc-500">
-                  <span>Shipping</span>
-                  <span className="text-green-600 font-medium">Free</span>
-                </div>
+                <div className="flex justify-between text-zinc-500"><span>Shipping</span><span className="text-green-600 font-medium">Free</span></div>
                 <div className="flex justify-between font-bold text-zinc-900 text-base border-t border-zinc-100 pt-2">
-                  <span>Total</span>
-                  <span>${finalTotal.toFixed(2)}</span>
+                  <span>Total</span><span>${finalTotal.toFixed(2)}</span>
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="mt-4 w-full py-3.5 bg-rose-500 hover:bg-rose-600 disabled:opacity-60 text-white font-bold rounded-xl transition-colors shadow-lg shadow-rose-100 flex items-center justify-center gap-2"
-              >
+              {submitError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-600">{submitError}</div>
+              )}
+
+              <button type="submit" disabled={submitting}
+                className="w-full py-3.5 bg-rose-500 hover:bg-rose-600 disabled:opacity-60 text-white font-bold rounded-xl transition-colors shadow-lg shadow-rose-100 flex items-center justify-center gap-2">
                 {submitting ? (
                   <>
                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                     </svg>
-                    Placing order...
+                    Redirecting to payment...
                   </>
                 ) : (
-                  `Place Order — $${finalTotal.toFixed(2)}`
+                  <>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                    Pay with Stripe — ${finalTotal.toFixed(2)}
+                  </>
                 )}
               </button>
 
-              <p className="text-xs text-zinc-400 text-center mt-3">
-                By placing your order you agree to our{" "}
-                <Link href="/returns" className="underline hover:text-zinc-600">return policy</Link>.
-                We will contact you to arrange payment.
-              </p>
-              <div className="flex justify-center gap-4 mt-4 text-zinc-400 text-xs">
-                <span>Free Shipping</span><span>·</span><span>Easy Returns</span><span>·</span><span>Secure</span>
+              {/* Stripe badge */}
+              <div className="flex items-center justify-center gap-2 text-zinc-400 text-xs">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Secured by Stripe · Free Shipping · Easy Returns
               </div>
             </div>
           </div>
