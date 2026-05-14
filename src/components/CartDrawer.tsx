@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCart } from "./CartProvider";
 
 interface Props {
@@ -107,9 +108,13 @@ export default function CartDrawer({ open, onClose }: Props) {
               <span>Total</span>
               <span>${totalPrice.toFixed(2)}</span>
             </div>
-            <button className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors">
+            <Link
+              href="/checkout"
+              onClick={onClose}
+              className="block w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-xl transition-colors text-center"
+            >
               Checkout — ${totalPrice.toFixed(2)}
-            </button>
+            </Link>
             <button
               onClick={clearCart}
               className="w-full py-2 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
