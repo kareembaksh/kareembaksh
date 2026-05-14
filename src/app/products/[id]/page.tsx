@@ -153,9 +153,12 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
 
             <Link
               href="/products"
-              className="mt-3 text-center text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+              className="mt-3 flex items-center justify-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
             >
-              ← Continue Shopping
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Continue Shopping
             </Link>
           </div>
         </div>
