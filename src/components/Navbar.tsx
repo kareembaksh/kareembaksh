@@ -16,8 +16,14 @@ export default function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2">
-              <span className="text-2xl font-bold tracking-tight text-zinc-900">
+            <Link href="/" className="flex items-center gap-2.5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-9 h-9 flex-shrink-0">
+                <rect width="32" height="32" rx="7" fill="#f43f5e"/>
+                <rect x="16" width="16" height="32" fill="#18181b"/>
+                <text x="2" y="23" fontFamily="Arial Black, Arial, sans-serif" fontSize="15" fontWeight="900" fill="white">K</text>
+                <text x="17" y="23" fontFamily="Arial Black, Arial, sans-serif" fontSize="15" fontWeight="900" fill="white">B</text>
+              </svg>
+              <span className="text-xl font-bold tracking-tight text-zinc-900">
                 Kareem<span className="text-rose-500">Baksh</span>
               </span>
             </Link>
