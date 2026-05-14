@@ -34,7 +34,6 @@ function ProductsContent() {
           <h1 className="text-4xl font-bold text-zinc-900">
             {activeCategory === "All" ? "All Products" : activeCategory}
           </h1>
-          <p className="text-zinc-500 mt-2">{sorted.length} products found</p>
         </div>
       </div>
 

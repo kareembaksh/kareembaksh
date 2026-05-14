@@ -18,9 +18,11 @@ export default function Footer() {
             <h4 className="text-white font-semibold mb-3 text-sm uppercase tracking-wider">Shop</h4>
             <ul className="space-y-2 text-sm">
               <li><Link href="/products?category=Women%27s+Bags" className="hover:text-white transition-colors">Women&apos;s Bags</Link></li>
-              <li><Link href="/products?category=Hand+Sanitizers" className="hover:text-white transition-colors">Hand Sanitizers</Link></li>
-              <li><Link href="/products?category=Skincare" className="hover:text-white transition-colors">Skincare</Link></li>
               <li><Link href="/products?category=Accessories" className="hover:text-white transition-colors">Accessories</Link></li>
+              <li><Link href="/products?category=Beauty+%26+Fragrance" className="hover:text-white transition-colors">Beauty & Fragrance</Link></li>
+              <li><Link href="/products?category=Home+%26+Living" className="hover:text-white transition-colors">Home & Living</Link></li>
+              <li><Link href="/products?category=Kitchen+%26+Dining" className="hover:text-white transition-colors">Kitchen & Dining</Link></li>
+              <li><Link href="/products?category=Outdoors+%26+Sports" className="hover:text-white transition-colors">Outdoors & Sports</Link></li>
             </ul>
           </div>
 
@@ -36,21 +38,34 @@ export default function Footer() {
 
           <div>
             <h4 className="text-white font-semibold mb-3 text-sm uppercase tracking-wider">Contact</h4>
-            <ul className="space-y-2 text-sm">
-              <li>
-                <a href="mailto:admin@kareembaksh.com" className="hover:text-white transition-colors">
-                  admin@kareembaksh.com
-                </a>
+            <ul className="space-y-3 text-sm">
+              <li className="flex items-start gap-2">
+                <svg className="w-4 h-4 mt-0.5 text-rose-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="text-zinc-400 leading-snug">31 Christie Street, Troy,<br />New York 12180, United States</span>
               </li>
-              <li className="text-zinc-500 text-xs mt-2">Mon–Fri, 9am–5pm EST</li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+                <a href="tel:3074301170" className="hover:text-white transition-colors">307 430 1170</a>
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <a href="mailto:admin@kareembaksh.com" className="hover:text-white transition-colors">admin@kareembaksh.com</a>
+              </li>
+              <li className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <a href="mailto:support@kareembaksh.com" className="hover:text-white transition-colors">support@kareembaksh.com</a>
+              </li>
+              <li className="text-zinc-500 text-xs">Mon–Fri, 9am–5pm EST</li>
             </ul>
-            <div className="flex gap-3 mt-4">
-              {["instagram", "facebook", "twitter"].map((s) => (
-                <a key={s} href="#" className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors">
-                  <span className="text-xs capitalize text-zinc-400">{s[0].toUpperCase()}</span>
-                </a>
-              ))}
-            </div>
           </div>
         </div>
 

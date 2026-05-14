@@ -1,7 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import ProductCard from "@/components/ProductCard";
+import HeroSlider from "@/components/HeroSlider";
 import { getFeaturedProducts, categories } from "@/lib/products";
+
 
 const categoryMeta: Record<string, { image: string; desc: string }> = {
   "Women's Bags": {
@@ -36,73 +38,8 @@ export default function Home() {
 
   return (
     <main>
-      {/* Hero */}
-      <section className="relative bg-gradient-to-br from-rose-50 via-white to-pink-50 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <span className="inline-block bg-rose-100 text-rose-600 text-xs font-semibold px-3 py-1.5 rounded-full mb-6 uppercase tracking-wider">
-                58 Products · Free Shipping
-              </span>
-              <h1 className="text-5xl lg:text-6xl font-bold text-zinc-900 leading-tight mb-6">
-                Premium Finds
-                <span className="text-rose-500 block">For Every Day</span>
-              </h1>
-              <p className="text-lg text-zinc-500 mb-8 max-w-md leading-relaxed">
-                Women&apos;s bags, beauty, home essentials, kitchen, and outdoor gear — all in one store with unbeatable prices.
-              </p>
-              <div className="flex gap-4 flex-wrap">
-                <Link
-                  href="/products"
-                  className="inline-flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white font-semibold px-8 py-3.5 rounded-full transition-colors shadow-lg shadow-rose-200"
-                >
-                  Shop All 58 Products
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                  </svg>
-                </Link>
-                <Link
-                  href="/products?category=Women%27s+Bags"
-                  className="inline-flex items-center gap-2 bg-white hover:bg-zinc-50 text-zinc-900 font-semibold px-8 py-3.5 rounded-full border border-zinc-200 transition-colors"
-                >
-                  Women&apos;s Bags
-                </Link>
-              </div>
-              <div className="flex gap-8 mt-10 text-sm">
-                {[["58", "Products"], ["6", "Categories"], ["Free", "Shipping"]].map(([val, label]) => (
-                  <div key={label}>
-                    <p className="text-2xl font-bold text-zinc-900">{val}</p>
-                    <p className="text-zinc-400">{label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="relative hidden lg:block">
-              <div className="relative w-full h-[480px] rounded-3xl overflow-hidden shadow-2xl">
-                <Image
-                  src="https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=800&q=80"
-                  alt="Featured bags collection"
-                  fill
-                  className="object-cover"
-                  priority
-                  sizes="50vw"
-                />
-              </div>
-              <div className="absolute -bottom-4 -left-4 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-3">
-                <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-zinc-900">Quality Guaranteed</p>
-                  <p className="text-xs text-zinc-400">Curated premium products</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Hero Slider */}
+      <HeroSlider />
 
       {/* Categories */}
       <section className="py-16 bg-white">
