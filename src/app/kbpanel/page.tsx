@@ -118,7 +118,7 @@ function mergeAll(d: AdminData): Product[] {
 }
 
 // ── Misc constants ─────────────────────────────────────────────────────────────
-const BLANK: Omit<Product, "id"> = { name:"", category:"Women's Bags", price:0, originalPrice:undefined, image:"", description:"", badge:undefined, rating:4.5, reviews:0, quantity:100 };
+const BLANK: Omit<Product, "id"> = { name:"", category:"Women's Bags", price:0, originalPrice:undefined, image:"", images:[], description:"", badge:undefined, rating:4.5, reviews:0, quantity:100 };
 
 const BADGE_STYLES: Record<string, string> = { Hot:"bg-red-100 text-red-600", New:"bg-blue-100 text-blue-600", Sale:"bg-amber-100 text-amber-600", Popular:"bg-purple-100 text-purple-600" };
 
@@ -148,8 +148,10 @@ export default function AdminPanel() {
   const [editing, setEditing]         = useState<Product|null>(null);
   const [form, setForm]               = useState<Omit<Product,"id">>(BLANK);
   const [imgMode, setImgMode]         = useState<"url"|"upload">("url");
+  const [extraImgUrl, setExtraImgUrl] = useState("");
   const [deleteId, setDeleteId]       = useState<number|null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef      = useRef<HTMLInputElement>(null);
+  const extraFileRef = useRef<HTMLInputElement>(null);
 
   // Orders
   const [orders, setOrders]               = useState<Order[]>([]);
@@ -182,12 +184,26 @@ export default function AdminPanel() {
 
   // Product helpers
   const updateProd = (d: AdminData) => { setProdData(d); saveProd(d); setAllProducts(mergeAll(d)); };
-  const openAdd  = () => { setEditing(null); setForm(BLANK); setImgMode("url"); setPage("add"); };
-  const openEdit = (p: Product) => { setEditing(p); setForm({...p}); setImgMode("url"); setPage("add"); };
+  const openAdd  = () => { setEditing(null); setForm(BLANK); setImgMode("url"); setExtraImgUrl(""); setPage("add"); };
+  const openEdit = (p: Product) => { setEditing(p); setForm({...p, images: p.images ?? []}); setImgMode("url"); setExtraImgUrl(""); setPage("add"); };
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const r = new FileReader(); r.onload = () => setForm(f => ({...f, image: r.result as string})); r.readAsDataURL(file);
   };
+  const handleExtraFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const r = new FileReader(); r.onload = () => {
+      const url = r.result as string;
+      setForm(f => ({...f, images: [...(f.images ?? []), url]}));
+    }; r.readAsDataURL(file);
+    e.target.value = "";
+  };
+  const addExtraUrl = () => {
+    const url = extraImgUrl.trim(); if (!url) return;
+    setForm(f => ({...f, images: [...(f.images ?? []), url]}));
+    setExtraImgUrl("");
+  };
+  const removeExtraImg = (idx: number) => setForm(f => ({...f, images: (f.images ?? []).filter((_,i) => i !== idx)}));
   const handleSaveProd = () => {
     if (!form.name.trim()||!form.price){ showToast("Name and price required."); return; }
     if (editing){
@@ -487,6 +503,30 @@ export default function AdminPanel() {
                         :<div><input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden"/><button onClick={()=>fileRef.current?.click()} className="w-full border-2 border-dashed border-zinc-300 rounded-xl py-8 text-sm text-zinc-400 hover:border-rose-400 hover:text-rose-400 transition-colors flex flex-col items-center gap-2"><svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>Click to upload</button></div>}
                     </div>
                     {form.image&&<img src={form.image} alt="preview" className="w-28 h-28 object-cover rounded-xl border border-zinc-200 flex-shrink-0"/>}
+                  </div>
+                </div>
+                {/* Additional Images */}
+                <div className="p-6 border-b border-zinc-100">
+                  <p className="text-sm font-semibold text-zinc-800 mb-1">Additional Images <span className="text-zinc-400 font-normal text-xs">(optional — shown as gallery thumbnails)</span></p>
+                  {(form.images ?? []).length > 0 && (
+                    <div className="flex flex-wrap gap-3 mb-4">
+                      {(form.images ?? []).map((src, i) => (
+                        <div key={i} className="relative group">
+                          <img src={src} alt={`extra ${i+1}`} className="w-20 h-20 object-cover rounded-xl border border-zinc-200"/>
+                          <button type="button" onClick={() => removeExtraImg(i)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input type="text" value={extraImgUrl} onChange={e => setExtraImgUrl(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addExtraUrl())}
+                      placeholder="Paste image URL and press Add..."
+                      className="flex-1 border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                    <button type="button" onClick={addExtraUrl} className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-700 text-white text-xs font-semibold rounded-xl transition-colors">Add URL</button>
+                    <button type="button" onClick={() => extraFileRef.current?.click()} className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold rounded-xl transition-colors">Upload</button>
+                    <input ref={extraFileRef} type="file" accept="image/*" onChange={handleExtraFile} className="hidden"/>
                   </div>
                 </div>
                 {/* Details */}
