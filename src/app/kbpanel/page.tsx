@@ -41,7 +41,7 @@ function csvEscape(v: unknown): string {
   const s = String(v ?? "");
   return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
 }
-function downloadCSV(filename: string, rows: string[][]) {
+function downloadCSV(filename: string, rows: unknown[][]) {
   const content = rows.map(r => r.map(csvEscape).join(",")).join("\n");
   const blob = new Blob([content], { type: "text/csv" });
   const url  = URL.createObjectURL(blob);
