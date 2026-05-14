@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProductById, products } from "@/lib/products";
 import ProductCard from "@/components/ProductCard";
 import AddToCartSection from "./AddToCartSection";
 import ReviewForm from "./ReviewForm";
-import ImageGallery from "./ImageGallery";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -64,12 +64,24 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
       {/* Product detail */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid lg:grid-cols-2 gap-12">
-          {/* Image gallery */}
-          <ImageGallery
-            images={product.images?.length ? product.images : [product.image]}
-            name={product.name}
-            badge={product.badge}
-          />
+          {/* Image */}
+          <div className="relative h-96 lg:h-[540px] rounded-3xl overflow-hidden bg-zinc-100">
+            {product.badge && (
+              <span className={`absolute top-4 left-4 z-10 text-white text-xs font-bold px-3 py-1.5 rounded-full ${
+                { New: "bg-blue-500", Sale: "bg-rose-500", Popular: "bg-amber-500", Hot: "bg-orange-500" }[product.badge]
+              }`}>
+                {product.badge}
+              </span>
+            )}
+            <Image
+              src={product.image}
+              alt={product.name}
+              fill
+              className="object-cover"
+              priority
+              sizes="(max-width: 1024px) 100vw, 50vw"
+            />
+          </div>
 
           {/* Info */}
           <div className="flex flex-col">
