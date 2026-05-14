@@ -105,16 +105,39 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
 
             {/* Perks */}
             <div className="grid grid-cols-3 gap-3 mb-8">
-              {[
-                { icon: "🚚", label: "Free Shipping" },
-                { icon: "↩️", label: "Easy Returns" },
-                { icon: "🔒", label: "Secure Pay" },
-              ].map(({ icon, label }) => (
-                <div key={label} className="flex flex-col items-center gap-1 p-3 bg-zinc-50 rounded-xl text-center">
-                  <span className="text-xl">{icon}</span>
-                  <span className="text-xs font-medium text-zinc-600">{label}</span>
-                </div>
-              ))}
+              {/* Free Shipping */}
+              <div className="flex flex-col items-center gap-2 p-3 bg-zinc-50 rounded-xl text-center">
+                <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="2" y="12" width="24" height="16" rx="2" fill="#FFA726"/>
+                  <rect x="6" y="16" width="16" height="8" rx="1" fill="#FFE0B2"/>
+                  <path d="M26 16h6l4 8v4h-10V16z" fill="#EF6C00"/>
+                  <rect x="8" y="16" width="10" height="8" rx="1" fill="#64B5F6"/>
+                  <circle cx="10" cy="29" r="3" fill="#37474F"/>
+                  <circle cx="10" cy="29" r="1.5" fill="#90A4AE"/>
+                  <circle cx="30" cy="29" r="3" fill="#37474F"/>
+                  <circle cx="30" cy="29" r="1.5" fill="#90A4AE"/>
+                </svg>
+                <span className="text-xs font-medium text-zinc-600">Free Shipping</span>
+              </div>
+              {/* Easy Returns */}
+              <div className="flex flex-col items-center gap-2 p-3 bg-zinc-50 rounded-xl text-center">
+                <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="6" y="8" width="28" height="24" rx="4" fill="#42A5F5"/>
+                  <path d="M14 20 L20 14 L20 18 L26 18 L26 22 L20 22 L20 26 Z" fill="white"/>
+                </svg>
+                <span className="text-xs font-medium text-zinc-600">Easy Returns</span>
+              </div>
+              {/* Secure Pay */}
+              <div className="flex flex-col items-center gap-2 p-3 bg-zinc-50 rounded-xl text-center">
+                <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="10" y="18" width="20" height="16" rx="3" fill="#FFA726"/>
+                  <rect x="13" y="21" width="14" height="10" rx="2" fill="#FFE0B2"/>
+                  <path d="M14 18v-5a6 6 0 0112 0v5" stroke="#795548" strokeWidth="2.5" strokeLinecap="round"/>
+                  <circle cx="20" cy="26" r="2.5" fill="#E65100"/>
+                  <rect x="19" y="26" width="2" height="3" rx="1" fill="#E65100"/>
+                </svg>
+                <span className="text-xs font-medium text-zinc-600">Secure Pay</span>
+              </div>
             </div>
 
             {/* Add to cart */}
