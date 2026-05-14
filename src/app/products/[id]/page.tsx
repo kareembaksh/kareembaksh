@@ -1,0 +1,156 @@
+"use client";
+
+import { use } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { getProductById, products } from "@/lib/products";
+import { useCart } from "@/components/CartProvider";
+import ProductCard from "@/components/ProductCard";
+
+export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const product = getProductById(Number(id));
+  const { addToCart } = useCart();
+
+  if (!product) notFound();
+
+  const related = products
+    .filter((p) => p.category === product.category && p.id !== product.id)
+    .slice(0, 4);
+
+  const discount = product.originalPrice
+    ? Math.round((1 - product.price / product.originalPrice) * 100)
+    : null;
+
+  return (
+    <main>
+      {/* Breadcrumb */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <nav className="flex items-center gap-2 text-sm text-zinc-400">
+          <Link href="/" className="hover:text-zinc-600">Home</Link>
+          <span>/</span>
+          <Link href="/products" className="hover:text-zinc-600">Products</Link>
+          <span>/</span>
+          <Link href={`/products?category=${encodeURIComponent(product.category)}`} className="hover:text-zinc-600">
+            {product.category}
+          </Link>
+          <span>/</span>
+          <span className="text-zinc-700 truncate max-w-[200px]">{product.name}</span>
+        </nav>
+      </div>
+
+      {/* Product detail */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid lg:grid-cols-2 gap-12">
+          {/* Image */}
+          <div className="relative h-96 lg:h-[540px] rounded-3xl overflow-hidden bg-zinc-100">
+            {product.badge && (
+              <span className={`absolute top-4 left-4 z-10 text-white text-xs font-bold px-3 py-1.5 rounded-full ${
+                { New: "bg-blue-500", Sale: "bg-rose-500", Popular: "bg-amber-500", Hot: "bg-orange-500" }[product.badge]
+              }`}>
+                {product.badge}
+              </span>
+            )}
+            <Image
+              src={product.image}
+              alt={product.name}
+              fill
+              className="object-cover"
+              priority
+              sizes="(max-width: 1024px) 100vw, 50vw"
+            />
+          </div>
+
+          {/* Info */}
+          <div className="flex flex-col">
+            <p className="text-sm font-semibold text-rose-500 uppercase tracking-wider mb-2">
+              {product.category}
+            </p>
+            <h1 className="text-3xl font-bold text-zinc-900 leading-tight mb-4">
+              {product.name}
+            </h1>
+
+            {/* Rating */}
+            <div className="flex items-center gap-2 mb-6">
+              <div className="flex text-amber-400">
+                {[...Array(5)].map((_, i) => (
+                  <svg
+                    key={i}
+                    className={`w-5 h-5 ${i < Math.floor(product.rating) ? "fill-current" : "fill-zinc-200"}`}
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                ))}
+              </div>
+              <span className="text-sm text-zinc-500">{product.rating} ({product.reviews} reviews)</span>
+            </div>
+
+            {/* Price */}
+            <div className="flex items-baseline gap-3 mb-6">
+              <span className="text-4xl font-bold text-zinc-900">${product.price.toFixed(2)}</span>
+              {product.originalPrice && (
+                <>
+                  <span className="text-xl text-zinc-400 line-through">${product.originalPrice.toFixed(2)}</span>
+                  <span className="bg-rose-100 text-rose-600 text-sm font-bold px-2.5 py-1 rounded-full">
+                    -{discount}%
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Description */}
+            <p className="text-zinc-500 leading-relaxed mb-8">{product.description}</p>
+
+            {/* Perks */}
+            <div className="grid grid-cols-3 gap-3 mb-8">
+              {[
+                { icon: "🚚", label: "Free Shipping" },
+                { icon: "↩️", label: "Easy Returns" },
+                { icon: "🔒", label: "Secure Pay" },
+              ].map(({ icon, label }) => (
+                <div key={label} className="flex flex-col items-center gap-1 p-3 bg-zinc-50 rounded-xl text-center">
+                  <span className="text-xl">{icon}</span>
+                  <span className="text-xs font-medium text-zinc-600">{label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Add to cart */}
+            <button
+              onClick={() => addToCart(product)}
+              className="w-full py-4 bg-rose-500 hover:bg-rose-600 text-white font-bold text-base rounded-2xl transition-colors shadow-lg shadow-rose-200 flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+              </svg>
+              Add to Cart — ${product.price.toFixed(2)}
+            </button>
+
+            <Link
+              href="/products"
+              className="mt-3 text-center text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+            >
+              ← Continue Shopping
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Related products */}
+      {related.length > 0 && (
+        <section className="bg-zinc-50 py-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 className="text-2xl font-bold text-zinc-900 mb-8">You May Also Like</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {related.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}

@@ -1,33 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
 import "./globals.css";
+import { CartProvider } from "@/components/CartProvider";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 
 export const metadata: Metadata = {
-  title: "Kareem Baksh LLC",
-  description: "Professional services and solutions — Kareem Baksh LLC",
+  title: "KareemBaksh — Premium Women's Bags, Skincare & More",
+  description: "Shop premium women's bags, hand sanitizers, skincare, and accessories at KareemBaksh. Free shipping on all orders.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${geist.variable} h-full`}>
+      <body className="min-h-full flex flex-col bg-white antialiased font-sans">
+        <CartProvider>
+          <Navbar />
+          <div className="flex-1">{children}</div>
+          <Footer />
+        </CartProvider>
+      </body>
     </html>
   );
 }
