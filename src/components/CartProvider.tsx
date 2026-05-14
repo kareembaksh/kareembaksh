@@ -8,7 +8,7 @@ interface CartState {
 }
 
 type CartAction =
-  | { type: "ADD"; product: Product }
+  | { type: "ADD"; product: Product; qty?: number }
   | { type: "REMOVE"; id: number }
   | { type: "UPDATE_QTY"; id: number; quantity: number }
   | { type: "CLEAR" }
@@ -17,15 +17,16 @@ type CartAction =
 function cartReducer(state: CartState, action: CartAction): CartState {
   switch (action.type) {
     case "ADD": {
+      const qty = action.qty ?? 1;
       const existing = state.items.find((i) => i.id === action.product.id);
       if (existing) {
         return {
           items: state.items.map((i) =>
-            i.id === action.product.id ? { ...i, quantity: i.quantity + 1 } : i
+            i.id === action.product.id ? { ...i, quantity: i.quantity + qty } : i
           ),
         };
       }
-      return { items: [...state.items, { ...action.product, quantity: 1 }] };
+      return { items: [...state.items, { ...action.product, quantity: qty }] };
     }
     case "REMOVE":
       return { items: state.items.filter((i) => i.id !== action.id) };
@@ -47,7 +48,7 @@ function cartReducer(state: CartState, action: CartAction): CartState {
 
 interface CartContextType {
   items: CartItem[];
-  addToCart: (product: Product) => void;
+  addToCart: (product: Product, qty?: number) => void;
   removeFromCart: (id: number) => void;
   updateQuantity: (id: number, quantity: number) => void;
   clearCart: () => void;
@@ -76,7 +77,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     <CartContext.Provider
       value={{
         items: state.items,
-        addToCart: (product) => dispatch({ type: "ADD", product }),
+        addToCart: (product, qty) => dispatch({ type: "ADD", product, qty }),
         removeFromCart: (id) => dispatch({ type: "REMOVE", id }),
         updateQuantity: (id, quantity) => dispatch({ type: "UPDATE_QTY", id, quantity }),
         clearCart: () => dispatch({ type: "CLEAR" }),

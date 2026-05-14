@@ -1,17 +1,38 @@
-"use client";
-
-import { use } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProductById, products } from "@/lib/products";
-import { useCart } from "@/components/CartProvider";
 import ProductCard from "@/components/ProductCard";
+import AddToCartSection from "./AddToCartSection";
+import ReviewForm from "./ReviewForm";
 
-export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
   const product = getProductById(Number(id));
-  const { addToCart } = useCart();
+  if (!product) return { title: "Product Not Found | Kareem Baksh Store" };
+
+  return {
+    title: `${product.name} | Kareem Baksh Store`,
+    description: product.description,
+    openGraph: {
+      title: product.name,
+      description: product.description,
+      images: [{ url: product.image, width: 600, height: 600, alt: product.name }],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: product.name,
+      description: product.description,
+      images: [product.image],
+    },
+  };
+}
+
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = getProductById(Number(id));
 
   if (!product) notFound();
 
@@ -75,11 +96,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
             <div className="flex items-center gap-2 mb-6">
               <div className="flex text-amber-400">
                 {[...Array(5)].map((_, i) => (
-                  <svg
-                    key={i}
-                    className={`w-5 h-5 ${i < Math.floor(product.rating) ? "fill-current" : "fill-zinc-200"}`}
-                    viewBox="0 0 20 20"
-                  >
+                  <svg key={i} className={`w-5 h-5 ${i < Math.floor(product.rating) ? "fill-current" : "fill-zinc-200"}`} viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                   </svg>
                 ))}
@@ -101,11 +118,10 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
             </div>
 
             {/* Description */}
-            <p className="text-zinc-500 leading-relaxed mb-8">{product.description}</p>
+            <p className="text-zinc-500 leading-relaxed mb-6">{product.description}</p>
 
             {/* Perks */}
-            <div className="grid grid-cols-3 gap-3 mb-8">
-              {/* Free Shipping */}
+            <div className="grid grid-cols-3 gap-3 mb-6">
               <div className="flex flex-col items-center gap-2 p-3 bg-zinc-50 rounded-xl text-center">
                 <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
                   <rect x="2" y="12" width="24" height="16" rx="2" fill="#FFA726"/>
@@ -119,7 +135,6 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
                 </svg>
                 <span className="text-xs font-medium text-zinc-600">Free Shipping</span>
               </div>
-              {/* Easy Returns */}
               <div className="flex flex-col items-center gap-2 p-3 bg-zinc-50 rounded-xl text-center">
                 <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
                   <rect x="6" y="8" width="28" height="24" rx="4" fill="#42A5F5"/>
@@ -127,7 +142,6 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
                 </svg>
                 <span className="text-xs font-medium text-zinc-600">Easy Returns</span>
               </div>
-              {/* Secure Pay */}
               <div className="flex flex-col items-center gap-2 p-3 bg-zinc-50 rounded-xl text-center">
                 <svg viewBox="0 0 40 40" fill="none" className="w-8 h-8" xmlns="http://www.w3.org/2000/svg">
                   <rect x="10" y="18" width="20" height="16" rx="3" fill="#FFA726"/>
@@ -140,26 +154,21 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
               </div>
             </div>
 
-            {/* Add to cart */}
-            <button
-              onClick={() => addToCart(product)}
-              className="w-full py-4 bg-rose-500 hover:bg-rose-600 text-white font-bold text-base rounded-2xl transition-colors shadow-lg shadow-rose-200 flex items-center justify-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-              </svg>
-              Add to Cart — ${product.price.toFixed(2)}
-            </button>
+            {/* Add to cart (client) */}
+            <AddToCartSection product={product} />
 
             <Link
               href="/products"
-              className="mt-3 flex items-center justify-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+              className="mt-4 flex items-center justify-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
               Continue Shopping
             </Link>
+
+            {/* Review form (client) */}
+            <ReviewForm productId={product.id} productName={product.name} />
           </div>
         </div>
       </section>

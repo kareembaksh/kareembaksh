@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import ProductCard from "@/components/ProductCard";
 import HeroSlider from "@/components/HeroSlider";
+import NewsletterSection from "@/components/NewsletterSection";
 import { getFeaturedProducts, categories } from "@/lib/products";
 
 
@@ -172,6 +173,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Newsletter */}
+      <NewsletterSection />
 
       {/* CTA */}
       <section className="py-16 bg-rose-500">
