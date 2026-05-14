@@ -9,6 +9,7 @@ export interface Product {
   badge?: "New" | "Sale" | "Popular" | "Hot";
   rating: number;
   reviews: number;
+  quantity: number;
 }
 
 export interface CartItem extends Product {
