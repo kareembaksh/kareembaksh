@@ -1,19 +1,37 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { products as staticProducts, categories } from "@/lib/products";
+import { products as staticProducts, categories, STATIC_CATEGORY_META } from "@/lib/products";
 import type { Product } from "@/lib/types";
 
 const PASSWORD = "KBadmin2025";
-const PROD_KEY  = "kb_admin_data";
-const ORDER_KEY = "kb_orders";
-const REV_KEY   = "kb_reviews";
+const PROD_KEY   = "kb_admin_data";
+const ORDER_KEY  = "kb_orders";
+const REV_KEY    = "kb_reviews";
+const PROMO_KEY  = "kb_promos";
+const CAT_KEY    = "kb_categories";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+type DiscountType = "percent" | "fixed";
+
+interface PromoCode {
+  id: string;
+  code: string;
+  description: string;
+  type: DiscountType;
+  value: number;
+  minOrder?: number;
+  startAt?: string;   // ISO datetime
+  expiresAt?: string; // ISO datetime
+  active: boolean;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface AdminData {
   overrides: Record<number, Partial<Product>>;
   added: Product[];
   deleted: number[];
+  hidden: number[];
 }
 
 type OrderStatus  = "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
@@ -95,8 +113,8 @@ const SEED_REVIEWS: Review[] = [
 
 // ── Storage ────────────────────────────────────────────────────────────────────
 function loadProd(): AdminData {
-  try { const r = localStorage.getItem(PROD_KEY); if (r) return JSON.parse(r); } catch {}
-  return { overrides: {}, added: [], deleted: [] };
+  try { const r = localStorage.getItem(PROD_KEY); if (r) { const p=JSON.parse(r); return {...p, hidden: p.hidden||[]}; } } catch {}
+  return { overrides: {}, added: [], deleted: [], hidden: [] };
 }
 function saveProd(d: AdminData) { localStorage.setItem(PROD_KEY, JSON.stringify(d)); }
 
@@ -123,8 +141,8 @@ const BLANK: Omit<Product, "id"> = { name:"", category:"Women's Bags", price:0, 
 const BADGE_STYLES: Record<string, string> = { Hot:"bg-red-100 text-red-600", New:"bg-blue-100 text-blue-600", Sale:"bg-amber-100 text-amber-600", Popular:"bg-purple-100 text-purple-600" };
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
-  Pending:"bg-amber-100 text-amber-700", Processing:"bg-blue-100 text-blue-700",
-  Shipped:"bg-purple-100 text-purple-700", Delivered:"bg-green-100 text-green-700", Cancelled:"bg-red-100 text-red-600",
+  Pending:"bg-amber-100 text-amber-700 w-24 inline-block text-center", Processing:"bg-blue-100 text-blue-700 w-24 inline-block text-center",
+  Shipped:"bg-purple-100 text-purple-700 w-24 inline-block text-center", Delivered:"bg-green-100 text-green-700 w-24 inline-block text-center", Cancelled:"bg-red-100 text-red-600 w-24 inline-block text-center",
 };
 const REV_STATUS_STYLES: Record<ReviewStatus, string> = {
   Pending:"bg-amber-100 text-amber-700", Approved:"bg-green-100 text-green-700", Rejected:"bg-red-100 text-red-600",
@@ -142,9 +160,11 @@ export default function AdminPanel() {
   const [pw, setPw] = useState(""); const [pwError, setPwError] = useState(false);
 
   // Products
-  const [prodData, setProdData]       = useState<AdminData>({ overrides:{}, added:[], deleted:[] });
+  const [prodData, setProdData]       = useState<AdminData>({ overrides:{}, added:[], deleted:[], hidden:[] });
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [search, setSearch]           = useState(""); const [catFilter, setCatFilter] = useState("All");
+  const [prodPage, setProdPage]       = useState(1);
+  const [visFilter, setVisFilter]     = useState<"All"|"Visible"|"Hidden">("All");
   const [editing, setEditing]         = useState<Product|null>(null);
   const [form, setForm]               = useState<Omit<Product,"id">>(BLANK);
   const [imgMode, setImgMode]         = useState<"url"|"upload">("url");
@@ -157,6 +177,7 @@ export default function AdminPanel() {
   const [orders, setOrders]               = useState<Order[]>([]);
   const [orderSearch, setOrderSearch]     = useState("");
   const [orderFilter, setOrderFilter]     = useState<OrderStatus|"All">("All");
+  const [orderPage, setOrderPage]         = useState(1);
   const [selOrder, setSelOrder]           = useState<Order|null>(null);
   const [trackingInput, setTrackingInput] = useState("");
   const [notesInput, setNotesInput]       = useState("");
@@ -165,8 +186,36 @@ export default function AdminPanel() {
   const [reviews, setReviews]             = useState<Review[]>([]);
   const [revFilter, setRevFilter]         = useState<ReviewStatus|"All">("All");
   const [revSearch, setRevSearch]         = useState("");
+  const [revPage, setRevPage]             = useState(1);
   const [selReview, setSelReview]         = useState<Review|null>(null);
   const [replyInput, setReplyInput]       = useState("");
+
+  // Custom categories
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [categoryMeta, setCategoryMeta]         = useState<Record<string, {image:string, desc:string}>>({});
+  const [catMgrInput, setCatMgrInput]           = useState("");
+  const [catMgrImage, setCatMgrImage]           = useState("");
+  const [catMgrDesc, setCatMgrDesc]             = useState("");
+  const [catMgrEditing, setCatMgrEditing]       = useState<string|null>(null);
+  const [catMgrEditVal, setCatMgrEditVal]       = useState("");
+  const [catMgrEditImage, setCatMgrEditImage]   = useState("");
+  const [catMgrEditDesc, setCatMgrEditDesc]     = useState("");
+  const [deleteCatId, setDeleteCatId]           = useState<string|null>(null);
+  
+  const catFileRef = useRef<HTMLInputElement>(null);
+  const catEditFileRef = useRef<HTMLInputElement>(null);
+
+  // Promos
+  const [promos, setPromos]               = useState<PromoCode[]>([]);
+  const [promoModal, setPromoModal]       = useState(false);
+  const [editPromo, setEditPromo]         = useState<PromoCode|null>(null);
+  const [promoForm, setPromoForm]         = useState<Omit<PromoCode,"id">>({
+    code:"", description:"", type:"percent", value:0, minOrder:undefined,
+    startAt:"", expiresAt:"", active:true,
+  });
+  const [promoFilter, setPromoFilter]     = useState<"All"|"Active"|"Scheduled"|"Expired"|"Inactive">("All");
+  const [promoSearch, setPromoSearch]     = useState("");
+  const [promoPage, setPromoPage]         = useState(1);
 
   // Nav + toast
   const [page, setPage] = useState<Page>("dashboard");
@@ -177,7 +226,141 @@ export default function AdminPanel() {
     if (!authed) return;
     const d = loadProd(); setProdData(d); setAllProducts(mergeAll(d));
     setOrders(loadOrders()); setReviews(loadReviews());
+    // Load custom categories and meta
+    try {
+      const rawCats = localStorage.getItem(CAT_KEY);
+      const rawMeta = localStorage.getItem("kb_category_meta");
+      const staticCats = categories.filter(c => c !== "All");
+      
+      if (rawMeta) setCategoryMeta(JSON.parse(rawMeta));
+      
+      if (rawCats) {
+        const parsed: string[] = JSON.parse(rawCats);
+        // Always ensure all static cats are present (migration for existing users)
+        const missingSatic = staticCats.filter(sc => !parsed.includes(sc));
+        const merged = missingSatic.length > 0 ? [...missingSatic, ...parsed] : parsed;
+        if (missingSatic.length > 0) localStorage.setItem(CAT_KEY, JSON.stringify(merged));
+        setCustomCategories(merged);
+      } else {
+        setCustomCategories(staticCats);
+        localStorage.setItem(CAT_KEY, JSON.stringify(staticCats));
+      }
+    } catch {}
+    // Load promos
+    try {
+      const raw = localStorage.getItem(PROMO_KEY);
+      if (raw) setPromos(JSON.parse(raw));
+      else {
+        const seed: PromoCode[] = [
+          { id:"p1", code:"WELCOME10", description:"Welcome discount",  type:"percent", value:10, active:true },
+          { id:"p2", code:"KB15",      description:"15% off",           type:"percent", value:15, active:true },
+          { id:"p3", code:"SAVE5",     description:"$5 off any order",  type:"fixed",   value:5,  active:true },
+          { id:"p4", code:"KBVIP",     description:"20% VIP discount",  type:"percent", value:20, active:true },
+          { id:"p5", code:"SUMMER",    description:"12% Summer sale",   type:"percent", value:12, active:true },
+        ];
+        setPromos(seed); localStorage.setItem(PROMO_KEY, JSON.stringify(seed));
+      }
+    } catch {}
   }, [authed]);
+
+  const savePromos = (list: PromoCode[]) => { setPromos(list); localStorage.setItem(PROMO_KEY, JSON.stringify(list)); };
+  const saveCustomCats = (list: string[], metaObj: Record<string, {image:string, desc:string}> = categoryMeta) => {
+    setCustomCategories(list);
+    setCategoryMeta(metaObj);
+    localStorage.setItem(CAT_KEY, JSON.stringify(list));
+    localStorage.setItem("kb_category_meta", JSON.stringify(metaObj));
+  };
+  const addCustomCat = () => {
+    const v = catMgrInput.trim();
+    if (!v) return;
+    const allCats = [...categories, ...customCategories];
+    if (allCats.map(c=>c.toLowerCase()).includes(v.toLowerCase())) { showToast("Category already exists."); return; }
+    
+    const newMeta = { ...categoryMeta, [v]: { image: catMgrImage.trim(), desc: catMgrDesc.trim() || "View products" } };
+    saveCustomCats([...customCategories, v], newMeta); 
+    setCatMgrInput(""); setCatMgrImage(""); setCatMgrDesc("");
+    showToast(`Category "${v}" added.`);
+  };
+  const deleteCustomCat = (cat: string) => { 
+    const newMeta = { ...categoryMeta };
+    delete newMeta[cat];
+    saveCustomCats(customCategories.filter(c=>c!==cat), newMeta); 
+    setDeleteCatId(null); 
+    showToast("Category deleted."); 
+  };
+  const startEditCat = (cat: string) => { 
+    setCatMgrEditing(cat); 
+    setCatMgrEditVal(cat); 
+    const meta = categoryMeta[cat] || STATIC_CATEGORY_META[cat];
+    setCatMgrEditImage(meta?.image || "");
+    setCatMgrEditDesc(meta?.desc || "");
+  };
+  const saveEditCat = () => {
+    if (!catMgrEditing) return;
+    const v = catMgrEditVal.trim();
+    if (!v) { setCatMgrEditing(null); return; }
+    
+    const allCats = [...categories, ...customCategories.filter(c=>c!==catMgrEditing)];
+    if (v !== catMgrEditing && allCats.map(c=>c.toLowerCase()).includes(v.toLowerCase())) { showToast("Name already exists."); return; }
+    
+    const newMeta = { ...categoryMeta };
+    if (v !== catMgrEditing) delete newMeta[catMgrEditing];
+    newMeta[v] = { image: catMgrEditImage.trim(), desc: catMgrEditDesc.trim() || "View products" };
+    
+    saveCustomCats(customCategories.map(c=>c===catMgrEditing?v:c), newMeta);
+    setCatMgrEditing(null); 
+    showToast(`Category "${v}" updated.`);
+  };
+
+  const handleCatImgUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        if (isEdit) setCatMgrEditImage(ev.target.result as string);
+        else setCatMgrImage(ev.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openAddPromo = () => {
+    setEditPromo(null);
+    setPromoForm({ code:"", description:"", type:"percent", value:0, minOrder:undefined, startAt:"", expiresAt:"", active:true });
+    setPromoModal(true);
+  };
+  const openEditPromo = (p: PromoCode) => {
+    setEditPromo(p);
+    setPromoForm({ code:p.code, description:p.description, type:p.type, value:p.value, minOrder:p.minOrder,
+      startAt:p.startAt??"", expiresAt:p.expiresAt??"", active:p.active });
+    setPromoModal(true);
+  };
+  const handleSavePromo = () => {
+    if (!promoForm.code.trim()) { showToast("Code is required."); return; }
+    if (promoForm.value <= 0)   { showToast("Value must be > 0."); return; }
+    const code = promoForm.code.trim().toUpperCase();
+    if (editPromo) {
+      savePromos(promos.map(p => p.id===editPromo.id ? { ...promoForm, code, id:editPromo.id } : p));
+      showToast("Promo updated.");
+    } else {
+      const id = "p" + Date.now();
+      savePromos([...promos, { ...promoForm, code, id }]);
+      showToast("Promo created.");
+    }
+    setPromoModal(false);
+  };
+  const deletePromo = (id: string) => { savePromos(promos.filter(p=>p.id!==id)); showToast("Promo deleted."); };
+  const togglePromo = (id: string) => savePromos(promos.map(p=>p.id===id?{...p,active:!p.active}:p));
+
+  // Promo status helper
+  const promoStatus = (p: PromoCode): "Scheduled"|"Active"|"Expired"|"Inactive" => {
+    const now = new Date();
+    if (!p.active) return "Inactive";
+    if (p.startAt && new Date(p.startAt) > now) return "Scheduled";
+    if (p.expiresAt && new Date(p.expiresAt) < now) return "Expired";
+    return "Active";
+  };
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
   const login = () => { if (pw===PASSWORD){ sessionStorage.setItem("kb_auth","1"); setAuthed(true); } else setPwError(true); };
@@ -218,7 +401,13 @@ export default function AdminPanel() {
   const handleDeleteProd = (id: number) => {
     if (staticProducts.some(p=>p.id===id)) updateProd({...prodData, deleted:[...prodData.deleted,id]});
     else updateProd({...prodData, added:prodData.added.filter(p=>p.id!==id)});
-    setDeleteId(null); showToast("Product hidden.");
+    setDeleteId(null); showToast("Product deleted.");
+  };
+  const handleToggleHideProd = (id: number) => {
+    const hidden = prodData.hidden || [];
+    if (hidden.includes(id)) updateProd({...prodData, hidden: hidden.filter(h=>h!==id)});
+    else updateProd({...prodData, hidden: [...hidden, id]});
+    showToast(hidden.includes(id) ? "Product unhidden." : "Product hidden from store.");
   };
 
   // Order helpers
@@ -256,9 +445,29 @@ export default function AdminPanel() {
   };
 
   // Computed
-  const filteredProducts = allProducts.filter(p=>(catFilter==="All"||p.category===catFilter)&&(!search||p.name.toLowerCase().includes(search.toLowerCase())));
-  const filteredOrders   = orders.filter(o=>(orderFilter==="All"||o.status===orderFilter)&&(!orderSearch||o.id.toLowerCase().includes(orderSearch.toLowerCase())||o.customer.name.toLowerCase().includes(orderSearch.toLowerCase())||o.customer.email.toLowerCase().includes(orderSearch.toLowerCase())));
-  const filteredReviews  = reviews.filter(r=>(revFilter==="All"||r.status===revFilter)&&(!revSearch||r.author.toLowerCase().includes(revSearch.toLowerCase())||r.productName.toLowerCase().includes(revSearch.toLowerCase())));
+  const allCategories = ["All", ...customCategories];
+  const filteredProductsAll = allProducts.filter(p=>{
+    if (catFilter!=="All" && p.category!==catFilter) return false;
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (visFilter==="Hidden" && !prodData.hidden?.includes(p.id)) return false;
+    if (visFilter==="Visible" && prodData.hidden?.includes(p.id)) return false;
+    return true;
+  });
+  const totalProdPages = Math.max(1, Math.ceil(filteredProductsAll.length / 15));
+  const filteredProducts = filteredProductsAll.slice((prodPage - 1) * 15, prodPage * 15);
+  const filteredOrdersAll  = orders.filter(o=>(orderFilter==="All"||o.status===orderFilter)&&(!orderSearch||o.id.toLowerCase().includes(orderSearch.toLowerCase())||o.customer.name.toLowerCase().includes(orderSearch.toLowerCase())||o.customer.email.toLowerCase().includes(orderSearch.toLowerCase())));
+  const totalOrderPages = Math.max(1, Math.ceil(filteredOrdersAll.length / 10));
+  const filteredOrders  = filteredOrdersAll.slice((orderPage - 1) * 10, orderPage * 10);
+  const filteredReviewsAll = reviews.filter(r=>(revFilter==="All"||r.status===revFilter)&&(!revSearch||r.author.toLowerCase().includes(revSearch.toLowerCase())||r.productName.toLowerCase().includes(revSearch.toLowerCase())));
+  const totalRevPages = Math.max(1, Math.ceil(filteredReviewsAll.length / 10));
+  const filteredReviews = filteredReviewsAll.slice((revPage - 1) * 10, revPage * 10);
+  const filteredPromosAll = promos.filter(p=>{
+    if (promoFilter !== "All" && promoStatus(p) !== promoFilter) return false;
+    if (promoSearch && !p.code.toLowerCase().includes(promoSearch.toLowerCase()) && !p.description.toLowerCase().includes(promoSearch.toLowerCase())) return false;
+    return true;
+  });
+  const totalPromoPages = Math.max(1, Math.ceil(filteredPromosAll.length / 6));
+  const paginatedPromos = filteredPromosAll.slice((promoPage - 1) * 6, promoPage * 6);
 
   const stats = {
     products: allProducts.length,
@@ -289,7 +498,7 @@ export default function AdminPanel() {
 
   // ── LOGIN ──────────────────────────────────────────────────────────────────
   if (!authed) return (
-    <div className="min-h-screen bg-zinc-900 flex items-center justify-center px-4">
+    <div className="fixed inset-0 z-[100] bg-zinc-900 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl">
         <div className="flex items-center gap-3 mb-8">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-11 h-11 flex-shrink-0">
@@ -311,10 +520,10 @@ export default function AdminPanel() {
 
   // ── LAYOUT ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col">
+    <div className="fixed inset-0 z-[100] bg-zinc-50 flex flex-col overflow-hidden">
 
       {/* Header */}
-      <header className="bg-zinc-900 text-white px-6 py-3 flex items-center justify-between sticky top-0 z-30">
+      <header className="bg-zinc-900 text-white px-6 py-3 flex items-center justify-between z-30">
         <div className="flex items-center gap-3"><KBIcon/><span className="font-bold text-base">KB Admin Panel</span></div>
         <div className="flex items-center gap-5 text-sm">
           <a href="/" target="_blank" className="text-zinc-400 hover:text-white transition-colors">View Store ↗</a>
@@ -325,10 +534,10 @@ export default function AdminPanel() {
       {/* Toast */}
       {toast&&<div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white text-sm px-5 py-2.5 rounded-full shadow-lg">{toast}</div>}
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
 
         {/* Sidebar */}
-        <aside className="w-56 bg-white border-r border-zinc-200 flex-shrink-0 hidden md:flex flex-col pt-6 pb-4 px-3">
+        <aside className="w-56 bg-white border-r border-zinc-200 flex-shrink-0 hidden md:flex flex-col pt-6 pb-4 px-3 overflow-y-auto">
           <nav className="space-y-1">
             <NavBtn k="dashboard" label="Dashboard"  icon="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
             <NavBtn k="products" label="Products"    icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
@@ -358,41 +567,65 @@ export default function AdminPanel() {
         </aside>
 
         {/* Main */}
-        <main className="flex-1 p-6 overflow-auto">
+        <main className={`flex-1 flex flex-col min-h-0 p-4 pb-20 md:p-6 md:pb-6 ${["products","orders","reviews"].includes(page) ? "overflow-hidden" : "overflow-auto"}`}>
 
           {/* ── DASHBOARD ─────────────────────────────────────────────── */}
           {page==="dashboard"&&(
-            <div>
-              <h2 className="text-xl font-bold text-zinc-900 mb-6">Dashboard</h2>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="space-y-6">
+              {/* Page title */}
+              <div>
+                <h2 className="text-xl font-bold text-zinc-900">Dashboard</h2>
+                <p className="text-xs text-zinc-400 mt-0.5">Welcome back — here's your store overview</p>
+              </div>
+
+              {/* Stat cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  {label:"Total Products", value:stats.products,     color:"text-zinc-900", bg:"bg-zinc-100",  icon:"M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"},
-                  {label:"Total Orders",   value:stats.orders,       color:"text-blue-600", bg:"bg-blue-50",   icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"},
-                  {label:"Pending Orders", value:stats.pending,      color:"text-amber-600",bg:"bg-amber-50",  icon:"M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"},
-                  {label:"Total Revenue",  value:`$${stats.revenue.toFixed(2)}`, color:"text-green-600", bg:"bg-green-50", icon:"M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"},
-                ].map(({label,value,color,bg,icon})=>(
-                  <div key={label} className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-sm">
-                    <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center mb-3`}>
-                      <svg className={`w-5 h-5 ${color}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon}/></svg>
+                  {label:"Total Products", value:stats.products,     icon:"M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",    accent:"bg-zinc-900",   text:"text-zinc-900"},
+                  {label:"Total Orders",   value:stats.orders,       icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2", accent:"bg-blue-500",   text:"text-blue-600"},
+                  {label:"Pending Orders", value:stats.pending,      icon:"M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",                           accent:"bg-amber-400",  text:"text-amber-600"},
+                  {label:"Total Revenue",  value:`$${stats.revenue.toFixed(2)}`, icon:"M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z", accent:"bg-green-500", text:"text-green-600"},
+                ].map(({label,value,icon,accent,text})=>(
+                  <div key={label} className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                    <div className={`w-9 h-9 ${accent} rounded-xl flex items-center justify-center mb-4`}>
+                      <svg className="w-4.5 h-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d={icon}/>
+                      </svg>
                     </div>
-                    <p className={`text-2xl font-bold ${color}`}>{value}</p>
-                    <p className="text-xs text-zinc-400 mt-1">{label}</p>
+                    <p className={`text-2xl font-bold tracking-tight ${text}`}>{value}</p>
+                    <p className="text-xs text-zinc-400 font-medium mt-1">{label}</p>
                   </div>
                 ))}
               </div>
 
+              {/* Two panels */}
               <div className="grid lg:grid-cols-2 gap-5">
                 {/* Recent orders */}
                 <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
-                    <h3 className="font-bold text-zinc-900 text-sm">Recent Orders</h3>
-                    <button onClick={()=>setPage("orders")} className="text-xs text-rose-500 font-semibold">View all →</button>
+                    <div>
+                      <h3 className="font-bold text-zinc-900 text-sm">Recent Orders</h3>
+                      <p className="text-xs text-zinc-400 mt-0.5">{orders.length} total orders</p>
+                    </div>
+                    <button onClick={()=>setPage("orders")} className="text-xs text-rose-500 font-semibold hover:text-rose-600 transition-colors">View all →</button>
                   </div>
                   <div className="divide-y divide-zinc-50">
+                    {orders.length===0 && <p className="px-5 py-8 text-xs text-zinc-400 text-center">No orders yet.</p>}
                     {orders.slice(0,5).map(o=>(
-                      <div key={o.id} className="flex items-center justify-between px-5 py-3 hover:bg-zinc-50 cursor-pointer" onClick={()=>openOrder(o)}>
-                        <div><p className="text-xs font-semibold text-zinc-900">{o.customer.name}</p><p className="text-xs text-zinc-400">{o.id}</p></div>
-                        <div className="flex items-center gap-3"><span className="text-xs font-semibold text-zinc-900">${o.total.toFixed(2)}</span><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLES[o.status]}`}>{o.status}</span></div>
+                      <div key={o.id} className="flex items-center px-5 py-3.5 hover:bg-zinc-50 cursor-pointer transition-colors gap-3" onClick={()=>openOrder(o)}>
+                        {/* Avatar */}
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-400 to-rose-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                          {o.customer.name.charAt(0)}
+                        </div>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-zinc-900 truncate">{o.customer.name}</p>
+                          <p className="text-[11px] text-zinc-400 truncate">{o.id}</p>
+                        </div>
+                        {/* Amount */}
+                        <span className="text-xs font-bold text-zinc-800 flex-shrink-0">${o.total.toFixed(2)}</span>
+                        {/* Status */}
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${STATUS_STYLES[o.status]}`}>{o.status}</span>
                       </div>
                     ))}
                   </div>
@@ -401,24 +634,40 @@ export default function AdminPanel() {
                 {/* Pending reviews */}
                 <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
-                    <h3 className="font-bold text-zinc-900 text-sm">Pending Reviews</h3>
-                    <button onClick={()=>{setRevFilter("Pending");setPage("reviews");}} className="text-xs text-rose-500 font-semibold">View all →</button>
+                    <div>
+                      <h3 className="font-bold text-zinc-900 text-sm">Pending Reviews</h3>
+                      <p className="text-xs text-zinc-400 mt-0.5">{reviews.filter(r=>r.status==="Pending").length} awaiting action</p>
+                    </div>
+                    <button onClick={()=>{setRevFilter("Pending");setPage("reviews");}} className="text-xs text-rose-500 font-semibold hover:text-rose-600 transition-colors">View all →</button>
                   </div>
                   <div className="divide-y divide-zinc-50">
+                    {reviews.filter(r=>r.status==="Pending").length===0 && <p className="px-5 py-8 text-xs text-zinc-400 text-center">No pending reviews.</p>}
                     {reviews.filter(r=>r.status==="Pending").slice(0,5).map(r=>(
-                      <div key={r.id} className="flex items-start gap-3 px-5 py-3 hover:bg-zinc-50 cursor-pointer" onClick={()=>{setSelReview(r);setReplyInput(r.reply??"");setPage("reviews");}}>
+                      <div key={r.id} className="flex items-center px-5 py-3.5 hover:bg-zinc-50 cursor-pointer transition-colors gap-3" onClick={()=>{setSelReview(r);setReplyInput(r.reply??"");setPage("reviews");}}>
+                        {/* Avatar */}
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                          {r.author.charAt(0)}
+                        </div>
+                        {/* Info */}
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-zinc-900 truncate">{r.productName}</p>
-                          <p className="text-xs text-zinc-400">{r.author} · <Stars n={r.rating}/></p>
-                          <p className="text-xs text-zinc-500 truncate mt-0.5">{r.body}</p>
+                          <p className="text-[11px] text-zinc-400 truncate">{r.author} · <Stars n={r.rating}/></p>
                         </div>
-                        <div className="flex gap-1 flex-shrink-0">
-                          <button onClick={e=>{e.stopPropagation();setRevStatus(r.id,"Approved");}} className="text-xs bg-green-100 text-green-700 hover:bg-green-200 px-2 py-1 rounded-lg font-semibold transition-colors">✓</button>
-                          <button onClick={e=>{e.stopPropagation();setRevStatus(r.id,"Rejected");}} className="text-xs bg-red-100 text-red-600 hover:bg-red-200 px-2 py-1 rounded-lg font-semibold transition-colors">✕</button>
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={e=>{e.stopPropagation();setRevStatus(r.id,"Approved");}}
+                            className="w-7 h-7 rounded-lg bg-green-100 hover:bg-green-200 text-green-700 font-bold text-sm flex items-center justify-center transition-colors"
+                            title="Approve"
+                          >✓</button>
+                          <button
+                            onClick={e=>{e.stopPropagation();setRevStatus(r.id,"Rejected");}}
+                            className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 font-bold text-sm flex items-center justify-center transition-colors"
+                            title="Reject"
+                          >✕</button>
                         </div>
                       </div>
                     ))}
-                    {reviews.filter(r=>r.status==="Pending").length===0&&<p className="px-5 py-6 text-xs text-zinc-400 text-center">No pending reviews.</p>}
                   </div>
                 </div>
               </div>
@@ -427,59 +676,155 @@ export default function AdminPanel() {
 
           {/* ── PRODUCTS ──────────────────────────────────────────────── */}
           {page==="products"&&(
-            <>
-              <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="flex flex-col h-full min-h-0 gap-4">
+              {/* Toolbar */}
+              <div className="flex flex-col sm:flex-row gap-2.5 flex-shrink-0">
+                {/* Search */}
                 <div className="relative flex-1">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                  <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search products..." className="w-full border border-zinc-300 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={e=>{setSearch(e.target.value);setProdPage(1);}}
+                    placeholder="Search products..."
+                    className="w-full bg-white border border-zinc-200 rounded-xl pl-10 pr-4 py-2.5 text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent shadow-sm"
+                  />
                 </div>
-                <select value={catFilter} onChange={e=>setCatFilter(e.target.value)} className="border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
-                  {categories.map(c=><option key={c}>{c}</option>)}
-                </select>
-                <button onClick={openAdd} className="bg-rose-500 hover:bg-rose-600 text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2 whitespace-nowrap">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>Add Product
-                </button>
+                {/* Filters row */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={catFilter}
+                    onChange={e=>{setCatFilter(e.target.value);setProdPage(1);}}
+                    className="bg-white border border-zinc-200 rounded-xl px-3 py-2.5 text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-rose-400 shadow-sm cursor-pointer"
+                  >
+                    {allCategories.map(c=><option key={c}>{c}</option>)}
+                  </select>
+                  <select
+                    value={visFilter}
+                    onChange={e=>{setVisFilter(e.target.value as "All"|"Visible"|"Hidden");setProdPage(1);}}
+                    className="bg-white border border-zinc-200 rounded-xl px-3 py-2.5 text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-rose-400 shadow-sm cursor-pointer"
+                  >
+                    <option value="All">All ({allProducts.length})</option>
+                    <option value="Visible">Visible ({allProducts.filter(p=>!prodData.hidden?.includes(p.id)).length})</option>
+                    <option value="Hidden">Hidden ({prodData.hidden?.length||0})</option>
+                  </select>
+                  <button
+                    onClick={openAdd}
+                    className="flex items-center gap-2 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors shadow-sm shadow-rose-200 whitespace-nowrap"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
+                    Add Product
+                  </button>
+                </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+              {/* Table card */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm flex flex-col flex-1 min-h-0">
+                <div className="overflow-x-auto overflow-y-auto flex-1">
                   <table className="w-full text-sm">
-                    <thead className="bg-zinc-50 border-b border-zinc-200">
-                      <tr>{["Product","Category","Price","Stock","Badge","Actions"].map(h=><th key={h} className={`${h==="Actions"?"text-right":"text-left"} px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider`}>{h}</th>)}</tr>
+                    <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0 z-10">
+                      <tr>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-[40%]">Product</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Category</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Price</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Stock</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Badge</th>
+                        <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Actions</th>
+                      </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                      {filteredProducts.map(p=>(
-                        <tr key={p.id} className="hover:bg-zinc-50 transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-100 flex-shrink-0 border border-zinc-200">
-                                {p.image&&<img src={p.image} alt={p.name} className="w-full h-full object-cover"/>}
+                      {filteredProducts.map(p=>{
+                        const isHidden = prodData.hidden?.includes(p.id);
+                        const isNew    = prodData.added.some(a=>a.id===p.id);
+                        const isEdited = !!prodData.overrides[p.id];
+                        return (
+                          <tr key={p.id} className={`transition-colors ${isHidden ? "bg-zinc-50/60 opacity-70 hover:opacity-100 hover:bg-zinc-50" : "hover:bg-zinc-50/60"}`}>
+                            {/* Product */}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl overflow-hidden bg-zinc-100 flex-shrink-0 border border-zinc-200 shadow-sm">
+                                  {p.image && <img src={p.image} alt={p.name} className="w-full h-full object-cover"/>}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-zinc-900 text-xs leading-snug truncate max-w-[200px]">{p.name}</p>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-zinc-400 text-[11px]">#{p.id}</span>
+                                    {isNew    && <span className="bg-blue-100 text-blue-600 text-[10px] font-bold px-1.5 py-0.5 rounded">NEW</span>}
+                                    {isEdited && <span className="bg-amber-100 text-amber-600 text-[10px] font-bold px-1.5 py-0.5 rounded">EDITED</span>}
+                                    {isHidden && <span className="bg-zinc-200 text-zinc-500 text-[10px] font-bold px-1.5 py-0.5 rounded">HIDDEN</span>}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <p className="font-medium text-zinc-900 text-xs leading-snug truncate max-w-[180px]">{p.name}</p>
-                                <p className="text-zinc-400 text-xs">#{p.id}{prodData.added.some(a=>a.id===p.id)&&<span className="text-blue-500 ml-1">• New</span>}{prodData.overrides[p.id]&&<span className="text-amber-500 ml-1">• Edited</span>}</p>
+                            </td>
+                            {/* Category */}
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center text-xs text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg font-medium whitespace-nowrap">{p.category}</span>
+                            </td>
+                            {/* Price */}
+                            <td className="px-4 py-3">
+                              <p className="font-bold text-zinc-900 text-sm">${p.price.toFixed(2)}</p>
+                              {p.originalPrice && <p className="line-through text-zinc-400 text-xs">${p.originalPrice.toFixed(2)}</p>}
+                            </td>
+                            {/* Stock */}
+                            <td className="px-4 py-3">
+                              <span className="text-xs font-medium text-zinc-600">
+                                {p.quantity?.toLocaleString() ?? "—"}
+                              </span>
+                            </td>
+                            {/* Badge */}
+                            <td className="px-4 py-3">
+                              {p.badge && <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${BADGE_STYLES[p.badge]??""}`}>{p.badge}</span>}
+                            </td>
+                            {/* Actions */}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={()=>openEdit(p)}
+                                  className="text-xs font-medium text-zinc-600 hover:text-blue-600 hover:bg-blue-50 border border-zinc-200 hover:border-blue-200 min-w-[48px] py-1.5 rounded-lg transition-colors text-center"
+                                >Edit</button>
+                                <button
+                                  onClick={()=>handleToggleHideProd(p.id)}
+                                  className={`text-xs font-medium min-w-[58px] py-1.5 rounded-lg border transition-colors text-center ${isHidden ? "text-green-600 border-green-200 bg-green-50 hover:bg-green-100" : "text-zinc-600 border-zinc-200 hover:bg-zinc-100"}`}
+                                >{isHidden ? "Unhide" : "Hide"}</button>
+                                <button
+                                  onClick={()=>setDeleteId(p.id)}
+                                  className="text-xs font-medium text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-zinc-200 hover:border-red-200 min-w-[52px] py-1.5 rounded-lg transition-colors text-center"
+                                >Delete</button>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">{p.category}</td>
-                          <td className="px-4 py-3"><p className="font-semibold text-zinc-900 text-sm">${p.price.toFixed(2)}</p>{p.originalPrice&&<p className="line-through text-zinc-400 text-xs">${p.originalPrice.toFixed(2)}</p>}</td>
-                          <td className="px-4 py-3 text-xs text-zinc-600">{p.quantity?.toLocaleString()}</td>
-                          <td className="px-4 py-3">{p.badge&&<span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${BADGE_STYLES[p.badge]??""}`}>{p.badge}</span>}</td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button onClick={()=>openEdit(p)} className="text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">Edit</button>
-                              <button onClick={()=>setDeleteId(p.id)} className="text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors">Hide</button>
-                            </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {filteredProducts.length===0&&(
+                        <tr>
+                          <td colSpan={6} className="px-5 py-16 text-center">
+                            <svg className="w-10 h-10 mx-auto mb-3 text-zinc-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                            <p className="text-sm font-medium text-zinc-400">No products found</p>
+                            <p className="text-xs text-zinc-300 mt-1">Try adjusting your filters</p>
                           </td>
                         </tr>
-                      ))}
-                      {filteredProducts.length===0&&<tr><td colSpan={6} className="px-5 py-12 text-center text-zinc-400 text-sm">No products found.</td></tr>}
+                      )}
                     </tbody>
                   </table>
                 </div>
-                <div className="px-5 py-3 border-t border-zinc-100 bg-zinc-50 text-xs text-zinc-400">Showing {filteredProducts.length} of {allProducts.length} products</div>
+
+                {/* Pagination footer */}
+                <div className="px-5 py-3.5 border-t border-zinc-100 bg-zinc-50/50 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+                  <p className="text-xs text-zinc-500">
+                    Showing <span className="font-semibold text-zinc-800">{filteredProducts.length > 0 ? (prodPage - 1) * 15 + 1 : 0}</span>–<span className="font-semibold text-zinc-800">{Math.min(prodPage * 15, filteredProductsAll.length)}</span> of <span className="font-semibold text-zinc-800">{filteredProductsAll.length}</span> products
+                    {totalProdPages > 1 && <span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-600">{prodPage}</span> of {totalProdPages}</span>}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button onClick={()=>setProdPage(p=>Math.max(1, p-1))} disabled={prodPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                    {Array.from({length: totalProdPages}, (_,i)=>i+1).filter(n=>n===1||n===totalProdPages||Math.abs(n-prodPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{ if(idx>0&&(n as number)-(arr[idx-1] as number)>1) acc.push('...'); acc.push(n); return acc; },[]).map((n,i)=>
+                      typeof n==='string' ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span> :
+                      <button key={i} onClick={()=>setProdPage(n as number)} className={`min-w-[32px] h-8 text-xs font-semibold rounded-lg border transition-colors ${prodPage===n?'bg-rose-500 border-rose-500 text-white shadow-sm shadow-rose-200':'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'}`}>{n}</button>
+                    )}
+                    <button onClick={()=>setProdPage(p=>Math.min(totalProdPages, p+1))} disabled={prodPage===totalProdPages} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">Next →</button>
+                  </div>
+                </div>
               </div>
-            </>
+            </div>
           )}
 
           {/* ── ADD/EDIT PRODUCT ──────────────────────────────────────── */}
@@ -533,12 +878,12 @@ export default function AdminPanel() {
                 <div className="p-6 border-b border-zinc-100 space-y-5">
                   <p className="text-sm font-semibold text-zinc-800">Product Details</p>
                   <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Name <span className="text-red-500">*</span></label><input type="text" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
-                  <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Category <span className="text-red-500">*</span></label><select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">{categories.filter(c=>c!=="All").map(c=><option key={c}>{c}</option>)}</select></div>
+                  <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Category <span className="text-red-500">*</span></label><select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">{allCategories.filter(c=>c!=="All").map(c=><option key={c}>{c}</option>)}</select></div>
                   <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Description</label><textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={4} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 resize-none"/></div>
                 </div>
                 {/* Pricing */}
                 <div className="p-6 border-b border-zinc-100 space-y-5">
-                  <p className="text-sm font-semibold text-zinc-800">Pricing & Inventory</p>
+                  <p className="text-sm font-semibold text-zinc-800">Pricing &amp; Inventory</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Price (USD) <span className="text-red-500">*</span></label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span><input type="number" step="0.01" min="0" value={form.price||""} onChange={e=>setForm(f=>({...f,price:parseFloat(e.target.value)||0}))} className="w-full border border-zinc-300 rounded-xl pl-8 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div></div>
                     <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Original Price</label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span><input type="number" step="0.01" min="0" value={form.originalPrice||""} onChange={e=>setForm(f=>({...f,originalPrice:e.target.value?parseFloat(e.target.value):undefined}))} placeholder="Optional" className="w-full border border-zinc-300 rounded-xl pl-8 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div></div>
@@ -562,23 +907,27 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* ── ORDERS LIST ───────────────────────────────────────────── */}
+          {/* ── ORDERS LIST ──────────────────────────────────────────────── */}
           {page==="orders"&&(
-            <>
-              <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-                {(["All","Pending","Processing","Shipped","Delivered","Cancelled"] as const).map(s=>{
-                  const count = s==="All"?orders.length:orders.filter(o=>o.status===s).length;
-                  return <button key={s} onClick={()=>setOrderFilter(s)} className={`rounded-xl p-3 text-left border transition-all ${orderFilter===s?"border-rose-300 bg-rose-50":"border-zinc-200 bg-white hover:border-zinc-300"}`}><p className={`text-xl font-bold ${s==="All"?"text-zinc-900":STATUS_STYLES[s as OrderStatus]?.split(" ")[1]}`}>{count}</p><p className="text-xs text-zinc-400 mt-0.5 truncate">{s==="All"?"All":s}</p></button>;
-                })}
+            <div className="flex flex-col h-full min-h-0">
+              {/* Status filter pills */}
+              <div className="flex-shrink-0 mb-4">
+                <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                  {(["All","Pending","Processing","Shipped","Delivered","Cancelled"] as const).map(s=>{
+                    const count = s==="All"?orders.length:orders.filter(o=>o.status===s).length;
+                    return <button key={s} onClick={()=>{setOrderFilter(s);setOrderPage(1);}} className={`rounded-xl p-3 text-left border transition-all ${orderFilter===s?"border-rose-300 bg-rose-50":"border-zinc-200 bg-white hover:border-zinc-300"}`}><p className={`text-xl font-bold ${s==="All"?"text-zinc-900":STATUS_STYLES[s as OrderStatus]?.split(" ")[1]}`}>{count}</p><p className="text-xs text-zinc-400 mt-0.5 truncate">{s==="All"?"All":s}</p></button>;
+                  })}
+                </div>
+                <div className="flex gap-3">
+                  <div className="relative flex-1"><svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" value={orderSearch} onChange={e=>{setOrderSearch(e.target.value);setOrderPage(1);}} placeholder="Search order ID, customer name or email..." className="w-full border border-zinc-300 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
+                </div>
               </div>
-              <div className="flex gap-3 mb-4">
-                <div className="relative flex-1"><svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg><input type="text" value={orderSearch} onChange={e=>setOrderSearch(e.target.value)} placeholder="Search order ID, customer name or email..." className="w-full border border-zinc-300 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
-              </div>
-              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-zinc-50 border-b border-zinc-200">
-                      <tr>{["Order","Customer","Date","Items","Total","Status","Update"].map(h=><th key={h} className={`${h==="Update"?"text-right":"text-left"} px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider`}>{h}</th>)}</tr>
+
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm flex flex-col flex-1 min-h-0">
+                <div className="overflow-x-auto overflow-y-auto flex-1">
+                  <table className="w-full text-sm relative">
+                    <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0 z-10 shadow-sm">
+                      <tr>{["Order","Customer","Date","Items","Total","Status","Update"].map(h=><th key={h} className={`${h==="Update"?"text-right":"text-left"} px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider bg-zinc-50`}>{h}</th>)}</tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                       {filteredOrders.map(o=>(
@@ -600,9 +949,22 @@ export default function AdminPanel() {
                     </tbody>
                   </table>
                 </div>
-                <div className="px-5 py-3 border-t border-zinc-100 bg-zinc-50 text-xs text-zinc-400">Showing {filteredOrders.length} of {orders.length} orders</div>
+                <div className="px-5 py-4 border-t border-zinc-100 bg-zinc-50 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+                  <div className="text-xs text-zinc-500">
+                    Showing <span className="font-semibold text-zinc-900">{filteredOrders.length > 0 ? (orderPage - 1) * 10 + 1 : 0}</span>–<span className="font-semibold text-zinc-900">{Math.min(orderPage * 10, filteredOrdersAll.length)}</span> of <span className="font-semibold text-zinc-900">{filteredOrdersAll.length}</span> orders
+                    {totalOrderPages > 1 && <span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-700">{orderPage}</span> of <span className="font-semibold text-zinc-700">{totalOrderPages}</span></span>}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={()=>setOrderPage(p=>Math.max(1,p-1))} disabled={orderPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                    {Array.from({length: totalOrderPages}, (_,i)=>i+1).filter(n=>n===1||n===totalOrderPages||Math.abs(n-orderPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{ if(idx>0&&(n as number)-(arr[idx-1] as number)>1) acc.push('...'); acc.push(n); return acc; },[]).map((n,i)=>
+                      typeof n==='string' ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span> :
+                      <button key={i} onClick={()=>setOrderPage(n as number)} className={`min-w-[32px] h-8 text-xs font-semibold rounded-lg border transition-colors ${orderPage===n?'bg-rose-500 border-rose-500 text-white':'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'}`}>{n}</button>
+                    )}
+                    <button onClick={()=>setOrderPage(p=>Math.min(totalOrderPages,p+1))} disabled={orderPage===totalOrderPages} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">Next →</button>
+                  </div>
+                </div>
               </div>
-            </>
+            </div>
           )}
 
           {/* ── ORDER DETAIL ──────────────────────────────────────────── */}
@@ -654,20 +1016,21 @@ export default function AdminPanel() {
 
           {/* ── REVIEWS ───────────────────────────────────────────────── */}
           {page==="reviews"&&(
-            <>
-              {/* Filter tabs */}
-              <div className="flex flex-wrap gap-2 mb-5">
+            <div className="flex flex-col h-full min-h-0">
+              {/* Filter tabs - fixed */}
+              <div className="flex-shrink-0 flex flex-wrap gap-2 mb-4">
                 {(["All","Pending","Approved","Rejected"] as const).map(s=>{
                   const count = s==="All"?reviews.length:reviews.filter(r=>r.status===s).length;
-                  return <button key={s} onClick={()=>setRevFilter(s)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${revFilter===s?"border-rose-300 bg-rose-50 text-rose-600":"border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"}`}>{s}<span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${revFilter===s?"bg-rose-200 text-rose-700":"bg-zinc-100 text-zinc-500"}`}>{count}</span></button>;
+                  return <button key={s} onClick={()=>{setRevFilter(s);setRevPage(1);}} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${revFilter===s?"border-rose-300 bg-rose-50 text-rose-600":"border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"}`}>{s}<span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${revFilter===s?"bg-rose-200 text-rose-700":"bg-zinc-100 text-zinc-500"}`}>{count}</span></button>;
                 })}
                 <div className="relative ml-auto">
                   <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                  <input type="text" value={revSearch} onChange={e=>setRevSearch(e.target.value)} placeholder="Search reviews..." className="border border-zinc-300 rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                  <input type="text" value={revSearch} onChange={e=>{setRevSearch(e.target.value);setRevPage(1);}} placeholder="Search reviews..." className="border border-zinc-300 rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
                 </div>
               </div>
 
-              <div className="space-y-3">
+              {/* Scrollable list */}
+              <div className="flex-1 overflow-y-auto min-h-0 space-y-3 pr-1">
                 {filteredReviews.map(r=>(
                   <div key={r.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${selReview?.id===r.id?"border-rose-300":"border-zinc-200"}`}>
                     <div className="p-5">
@@ -724,15 +1087,34 @@ export default function AdminPanel() {
                 ))}
                 {filteredReviews.length===0&&<div className="bg-white rounded-2xl border border-zinc-200 py-16 text-center text-zinc-400 text-sm">No reviews match your filter.</div>}
               </div>
-            </>
+
+              {/* Pagination */}
+              <div className="flex-shrink-0 mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-zinc-500">
+                  Showing <span className="font-semibold text-zinc-900">{filteredReviews.length > 0 ? (revPage - 1) * 10 + 1 : 0}</span>–<span className="font-semibold text-zinc-900">{Math.min(revPage * 10, filteredReviewsAll.length)}</span> of <span className="font-semibold text-zinc-900">{filteredReviewsAll.length}</span> reviews
+                  {totalRevPages > 1 && <span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-700">{revPage}</span> of <span className="font-semibold text-zinc-700">{totalRevPages}</span></span>}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={()=>setRevPage(p=>Math.max(1,p-1))} disabled={revPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                  {Array.from({length: totalRevPages}, (_,i)=>i+1).filter(n=>n===1||n===totalRevPages||Math.abs(n-revPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{ if(idx>0&&(n as number)-(arr[idx-1] as number)>1) acc.push('...'); acc.push(n); return acc; },[]).map((n,i)=>
+                    typeof n==='string' ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span> :
+                    <button key={i} onClick={()=>setRevPage(n as number)} className={`min-w-[32px] h-8 text-xs font-semibold rounded-lg border transition-colors ${revPage===n?'bg-rose-500 border-rose-500 text-white':'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'}`}>{n}</button>
+                  )}
+                  <button onClick={()=>setRevPage(p=>Math.min(totalRevPages,p+1))} disabled={revPage===totalRevPages} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">Next →</button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ── SETTINGS ─────────────────────────────────────────────── */}
           {page==="settings"&&(
-            <div className="max-w-2xl space-y-6">
-              <h2 className="text-xl font-bold text-zinc-900">Settings</h2>
+            <div className="w-full">
+              <h2 className="text-xl font-bold text-zinc-900 mb-6">Settings</h2>
 
-              {/* Stripe Status Card */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                {/* Left Column */}
+                <div className="space-y-6">
+                  {/* Stripe Status Card */}
               <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
                   <div className="w-9 h-9 bg-violet-50 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -806,40 +1188,7 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              {/* Promo codes card */}
-              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-                <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
-                  <div className="w-9 h-9 bg-rose-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="font-bold text-zinc-900 text-sm">Active Promo Codes</p>
-                    <p className="text-xs text-zinc-400">Codes customers can use at checkout</p>
-                  </div>
-                </div>
-                <div className="p-6">
-                  <div className="space-y-2">
-                    {[
-                      { code:"WELCOME10", desc:"10% off — Welcome discount" },
-                      { code:"KB15",      desc:"15% off" },
-                      { code:"SAVE5",     desc:"$5 off any order" },
-                      { code:"KBVIP",     desc:"20% VIP discount" },
-                      { code:"SUMMER",    desc:"12% Summer sale" },
-                    ].map(({code,desc})=>(
-                      <div key={code} className="flex items-center gap-3 px-3 py-2.5 bg-zinc-50 rounded-xl">
-                        <span className="font-mono text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-1 rounded">{code}</span>
-                        <span className="text-xs text-zinc-500">{desc}</span>
-                        <span className="ml-auto text-xs bg-green-100 text-green-600 font-semibold px-2 py-0.5 rounded-full">Active</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-zinc-400 mt-4">To change promo codes, edit <code className="bg-zinc-100 px-1 rounded">src/app/checkout/page.tsx</code> → PROMO_CODES object.</p>
-                </div>
-              </div>
-
-              {/* Contact card */}
+              {/* Contact card (Moved to Left Column) */}
               <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
                   <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -858,21 +1207,387 @@ export default function AdminPanel() {
                 </div>
               </div>
             </div>
-          )}
+
+            {/* Right Column */}
+            <div className="space-y-6">
+              {/* Promo Codes Manager */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+                <div className="p-5 border-b border-zinc-100 flex-shrink-0 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-rose-50 rounded-xl flex items-center justify-center">
+                        <svg className="w-5 h-5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="font-bold text-zinc-900 text-sm">Promo Codes</p>
+                        <p className="text-xs text-zinc-400">Create, schedule and manage</p>
+                      </div>
+                    </div>
+                    <button onClick={openAddPromo} className="bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+                      New Code
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex bg-zinc-50 p-1 rounded-xl border border-zinc-200">
+                      {(["All","Active","Scheduled","Expired","Inactive"] as const).map(s=>(
+                        <button key={s} onClick={()=>{setPromoFilter(s);setPromoPage(1);}} className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${promoFilter===s?"bg-white text-zinc-900 shadow-sm border border-zinc-200":"text-zinc-500 hover:text-zinc-700"}`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="relative flex-1 min-w-[200px]">
+                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                      <input type="text" value={promoSearch} onChange={e=>{setPromoSearch(e.target.value);setPromoPage(1);}} placeholder="Search codes..." className="w-full border border-zinc-300 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-rose-400 bg-white"/>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto min-h-0 divide-y divide-zinc-50">
+                  {paginatedPromos.length === 0 && <p className="text-xs text-zinc-400 text-center py-10">No promo codes found.</p>}
+                  {paginatedPromos.map(p => {
+                    const status = promoStatus(p);
+                    const statusStyle = { Active:"bg-green-100 text-green-700 border-green-200", Scheduled:"bg-blue-100 text-blue-700 border-blue-200", Expired:"bg-zinc-100 text-zinc-500 border-zinc-200", Inactive:"bg-amber-100 text-amber-700 border-amber-200" }[status];
+                    return (
+                      <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-4 hover:bg-zinc-50/80 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-mono text-sm font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2.5 py-0.5 rounded-md shadow-sm">{p.code}</span>
+                            <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${statusStyle}`}>{status}</span>
+                          </div>
+                          <p className="text-xs text-zinc-600 mb-1.5">{p.description} — <strong className="text-zinc-900">{p.type==="percent" ? `${p.value}% off` : `$${p.value} off`}</strong>{p.minOrder ? ` (min $${p.minOrder})` : ""}</p>
+                          {(p.startAt || p.expiresAt) && (
+                            <div className="flex items-center gap-2 flex-wrap text-xs text-zinc-400">
+                              {p.startAt && <span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>{new Date(p.startAt).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>}
+                              {p.startAt && p.expiresAt && <span className="text-zinc-300">|</span>}
+                              {p.expiresAt && <span className="flex items-center gap-1"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>{new Date(p.expiresAt).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button onClick={()=>togglePromo(p.id)} className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border shadow-sm ${p.active?"bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50":"bg-green-50 border-green-200 text-green-700 hover:bg-green-100"}`}>
+                            {p.active ? "Disable" : "Enable"}
+                          </button>
+                          <button onClick={()=>openEditPromo(p)} className="text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-sm px-3 py-1.5 rounded-lg transition-colors">Edit</button>
+                          <button onClick={()=>deletePromo(p.id)} className="text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 shadow-sm px-3 py-1.5 rounded-lg transition-colors">Delete</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Pagination */}
+                {totalPromoPages > 1 && (
+                  <div className="flex-shrink-0 p-4 border-t border-zinc-100 bg-zinc-50 flex items-center justify-between">
+                    <div className="text-xs text-zinc-500">
+                      Showing <span className="font-semibold text-zinc-900">{filteredPromosAll.length > 0 ? (promoPage - 1) * 6 + 1 : 0}</span> to <span className="font-semibold text-zinc-900">{Math.min(promoPage * 6, filteredPromosAll.length)}</span> of <span className="font-semibold text-zinc-900">{filteredPromosAll.length}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={()=>setPromoPage(p=>Math.max(1,p-1))} disabled={promoPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 shadow-sm text-zinc-600 rounded-lg disabled:opacity-50 hover:bg-zinc-50 transition-colors">Prev</button>
+                      <button onClick={()=>setPromoPage(p=>Math.min(totalPromoPages,p+1))} disabled={promoPage===totalPromoPages} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 shadow-sm text-zinc-600 rounded-lg disabled:opacity-50 hover:bg-zinc-50 transition-colors">Next</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Promo Modal */}
+              {promoModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center px-4" onClick={()=>setPromoModal(false)}>
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/>
+                  <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 z-10" onClick={e=>e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-5">
+                      <h3 className="font-bold text-zinc-900 text-base">{editPromo ? "Edit Promo Code" : "New Promo Code"}</h3>
+                      <button onClick={()=>setPromoModal(false)} className="text-zinc-400 hover:text-zinc-700 transition-colors">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 mb-1.5">Code <span className="text-red-500">*</span></label>
+                        <input type="text" value={promoForm.code} onChange={e=>setPromoForm(f=>({...f,code:e.target.value.toUpperCase()}))} placeholder="e.g. SAVE20" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-rose-400 uppercase"/>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 mb-1.5">Description</label>
+                        <input type="text" value={promoForm.description} onChange={e=>setPromoForm(f=>({...f,description:e.target.value}))} placeholder="e.g. Summer sale discount" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Discount Type</label>
+                          <select value={promoForm.type} onChange={e=>setPromoForm(f=>({...f,type:e.target.value as DiscountType}))} className="w-full border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
+                            <option value="percent">Percentage (%)</option>
+                            <option value="fixed">Fixed Amount ($)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Value <span className="text-red-500">*</span></label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">{promoForm.type==="percent" ? "%" : "$"}</span>
+                            <input type="number" min="0" step="0.01" value={promoForm.value||""} onChange={e=>setPromoForm(f=>({...f,value:parseFloat(e.target.value)||0}))} className="w-full border border-zinc-300 rounded-xl pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 mb-1.5">Minimum Order Amount ($) <span className="text-zinc-400 font-normal">optional</span></label>
+                        <input type="number" min="0" step="0.01" value={promoForm.minOrder||""} onChange={e=>setPromoForm(f=>({...f,minOrder:e.target.value?parseFloat(e.target.value):undefined}))} placeholder="No minimum" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">🗓 Start Date / Time <span className="text-zinc-400 font-normal">optional</span></label>
+                          <input type="datetime-local" value={promoForm.startAt||""} onChange={e=>setPromoForm(f=>({...f,startAt:e.target.value}))} className="w-full border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">⏰ Expiry Date / Time <span className="text-zinc-400 font-normal">optional</span></label>
+                          <input type="datetime-local" value={promoForm.expiresAt||""} onChange={e=>setPromoForm(f=>({...f,expiresAt:e.target.value}))} className="w-full border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
+                        <label className="text-xs font-medium text-zinc-700 flex-1">Active (visible at checkout)</label>
+                        <button onClick={()=>setPromoForm(f=>({...f,active:!f.active}))} className={`w-10 h-6 rounded-full transition-colors relative ${promoForm.active?"bg-rose-500":"bg-zinc-300"}`}>
+                          <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${promoForm.active?"right-0.5":"left-0.5"}`}/>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 mt-5">
+                      <button onClick={()=>setPromoModal(false)} className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
+                      <button onClick={handleSavePromo} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm transition-colors">{editPromo?"Save Changes":"Create Code"}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Categories Manager */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col" style={{minHeight: "420px", maxHeight: "520px"}}>
+                {/* Header */}
+                <div className="px-5 py-4 border-b border-zinc-100 flex-shrink-0">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-teal-400 to-teal-600 rounded-xl flex items-center justify-center shadow-sm">
+                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-zinc-900 text-sm">Manage Categories</p>
+                          <span className="bg-teal-100 text-teal-700 text-xs font-bold px-2 py-0.5 rounded-full">{customCategories.length}</span>
+                        </div>
+                        <p className="text-xs text-zinc-400 mt-0.5">Add, rename, or remove product categories</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const staticCats = categories.filter(c => c !== "All");
+                        const custom = customCategories.filter(c => !staticCats.includes(c));
+                        const merged = [...staticCats, ...custom];
+                        saveCustomCats(merged);
+                        showToast("Default categories restored.");
+                      }}
+                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-teal-600 font-medium border border-zinc-200 hover:border-teal-300 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                      Reset Defaults
+                    </button>
+                  </div>
+                  {/* Add new category input */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+                        <input
+                          type="text"
+                          value={catMgrInput}
+                          onChange={e => setCatMgrInput(e.target.value)}
+                          placeholder="New category name…"
+                          className="w-full border border-zinc-300 rounded-xl pl-8 pr-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white placeholder-zinc-400"
+                        />
+                      </div>
+                      <button
+                        onClick={addCustomCat}
+                        className="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-colors shadow-sm whitespace-nowrap flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
+                        Add
+                      </button>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <div className="flex-1 relative">
+                        <input
+                          type="text"
+                          value={catMgrImage}
+                          onChange={e => setCatMgrImage(e.target.value)}
+                          placeholder="Image URL or upload"
+                          className="w-full border border-zinc-300 rounded-xl pl-4 pr-12 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white placeholder-zinc-400"
+                        />
+                        <button
+                          onClick={() => catFileRef.current?.click()}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-zinc-400 hover:text-teal-500 hover:bg-teal-50 rounded-lg transition-colors"
+                          title="Upload Image"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                        </button>
+                        <input type="file" ref={catFileRef} className="hidden" accept="image/*" onChange={(e) => handleCatImgUpload(e, false)} />
+                      </div>
+                      <input
+                        type="text"
+                        value={catMgrDesc}
+                        onChange={e => setCatMgrDesc(e.target.value)}
+                        placeholder="Description (optional)"
+                        className="flex-1 border border-zinc-300 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white placeholder-zinc-400"
+                        onKeyDown={e => e.key === "Enter" && addCustomCat()}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category list */}
+                <div className="flex-1 overflow-y-auto min-h-0">
+                  {customCategories.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
+                      <svg className="w-10 h-10 mb-2 text-zinc-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
+                      <p className="text-xs font-medium">No categories yet</p>
+                      <p className="text-xs mt-0.5">Type a name above and click Add</p>
+                    </div>
+                  )}
+                  {customCategories.map((cat, idx) => {
+                    const isDefault = categories.filter(c => c !== "All").includes(cat);
+                    const meta = categoryMeta[cat] || STATIC_CATEGORY_META[cat];
+                    return (
+                      <div key={cat} className="flex items-start gap-3 px-5 py-3 hover:bg-zinc-50 transition-colors border-b border-zinc-50 last:border-0">
+                        {/* Index + image */}
+                        <div className="flex flex-col items-center gap-1.5 pt-1">
+                          <span className="w-6 h-6 rounded-full bg-zinc-100 text-zinc-400 text-xs font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                          {meta?.image && !catMgrEditing && (
+                            <img src={meta.image} alt="" className="w-6 h-6 rounded-md object-cover border border-zinc-200" />
+                          )}
+                        </div>
+
+                        {catMgrEditing === cat ? (
+                          <div className="flex flex-col gap-2 flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={catMgrEditVal}
+                                onChange={e => setCatMgrEditVal(e.target.value)}
+                                placeholder="Category name"
+                                className="flex-1 border border-teal-400 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-300 min-w-0"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 relative">
+                                <input
+                                  type="text"
+                                  value={catMgrEditImage}
+                                  onChange={e => setCatMgrEditImage(e.target.value)}
+                                  placeholder="Image URL or upload"
+                                  className="w-full border border-zinc-300 rounded-lg pl-3 pr-10 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-300 min-w-0"
+                                />
+                                <button
+                                  onClick={() => catEditFileRef.current?.click()}
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-teal-500 hover:bg-teal-50 rounded transition-colors"
+                                  title="Upload Image"
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                </button>
+                                <input type="file" ref={catEditFileRef} className="hidden" accept="image/*" onChange={(e) => handleCatImgUpload(e, true)} />
+                              </div>
+                              <input
+                                type="text"
+                                value={catMgrEditDesc}
+                                onChange={e => setCatMgrEditDesc(e.target.value)}
+                                onKeyDown={e => e.key === "Enter" && saveEditCat()}
+                                placeholder="Description"
+                                className="flex-1 border border-zinc-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-300 min-w-0"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <button onClick={saveEditCat} className="text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white px-4 py-1.5 rounded-lg transition-colors whitespace-nowrap">Save</button>
+                              <button onClick={() => setCatMgrEditing(null)} className="text-xs border border-zinc-300 text-zinc-500 hover:bg-zinc-100 px-4 py-1.5 rounded-lg transition-colors whitespace-nowrap">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex-1 min-w-0 flex flex-col pt-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-zinc-800 truncate">{cat}</span>
+                                {isDefault && (
+                                  <span className="text-[10px] font-semibold bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded-md flex-shrink-0">Default</span>
+                                )}
+                              </div>
+                              {meta?.desc && <span className="text-xs text-zinc-400 mt-0.5">{meta.desc}</span>}
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0 pt-1">
+                              <button
+                                onClick={() => startEditCat(cat)}
+                                className="text-xs font-medium text-zinc-600 hover:text-blue-600 hover:bg-blue-50 border border-zinc-200 hover:border-blue-200 px-3 py-1.5 rounded-lg transition-colors"
+                              >Edit</button>
+                              <button
+                                onClick={() => setDeleteCatId(cat)}
+                                className="text-xs font-medium text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-zinc-200 hover:border-red-200 px-3 py-1.5 rounded-lg transition-colors"
+                              >Delete</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
         </main>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 flex items-center justify-around z-40 px-2 pb-[env(safe-area-inset-bottom)]">
+        {[
+          { k:"dashboard", label:"Dash", icon:"M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+          { k:"products", label:"Products", icon:"M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
+          { k:"orders", label:"Orders", badge:stats.pending, icon:"M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" },
+          { k:"reviews", label:"Reviews", badge:stats.pendingRevs, icon:"M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" },
+          { k:"settings", label:"Settings", icon:"M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
+        ].map(item => {
+          const active = page===item.k||(page==="add"&&item.k==="products")||(page==="order-detail"&&item.k==="orders");
+          return (
+            <button key={item.k} onClick={()=>setPage(item.k as Page)} className={`flex-1 flex flex-col items-center justify-center py-2.5 relative transition-colors ${active?"text-rose-600":"text-zinc-400 hover:text-zinc-600"}`}>
+              <svg className="w-5 h-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon}/></svg>
+              <span className="text-[10px] font-semibold">{item.label}</span>
+              {!!item.badge && <span className="absolute top-1 right-[25%] w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-white"/>}
+            </button>
+          )
+        })}
+      </nav>
 
       {/* Delete product confirm */}
       {deleteId!==null&&(
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
           <div className="bg-white rounded-2xl p-7 w-full max-w-sm shadow-2xl">
             <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4"><svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.07 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg></div>
-            <h3 className="font-bold text-zinc-900 text-lg mb-2">Hide This Product?</h3>
-            <p className="text-sm text-zinc-500 mb-6">The product will be hidden from the store. Reset to defaults to restore.</p>
+            <h3 className="font-bold text-zinc-900 text-lg mb-2">Delete This Product?</h3>
+            <p className="text-sm text-zinc-500 mb-6">This action cannot be undone. The product will be completely removed.</p>
             <div className="flex gap-3">
               <button onClick={()=>setDeleteId(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
-              <button onClick={()=>handleDeleteProd(deleteId)} className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">Hide</button>
+              <button onClick={()=>handleDeleteProd(deleteId)} className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete category confirm */}
+      {deleteCatId!==null&&(
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-2xl p-7 w-full max-w-sm shadow-2xl">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4"><svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.07 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg></div>
+            <h3 className="font-bold text-zinc-900 text-lg mb-2">Delete Category?</h3>
+            <p className="text-sm text-zinc-500 mb-6">Are you sure you want to delete the category <strong>"{deleteCatId}"</strong>? Products in this category will keep the category name, but it will be removed from filters and the creation menu.</p>
+            <div className="flex gap-3">
+              <button onClick={()=>setDeleteCatId(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
+              <button onClick={()=>deleteCustomCat(deleteCatId)} className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">Delete</button>
             </div>
           </div>
         </div>

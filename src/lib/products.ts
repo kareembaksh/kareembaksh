@@ -1,5 +1,32 @@
 import { Product } from "./types";
 
+export const STATIC_CATEGORY_META: Record<string, { image: string; desc: string }> = {
+  "Women's Bags": {
+    image: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=600&q=80",
+    desc: "28 styles",
+  },
+  "Accessories": {
+    image: "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&q=80",
+    desc: "Hats, wallets & more",
+  },
+  "Beauty & Fragrance": {
+    image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=600&q=80",
+    desc: "Perfumes & gift sets",
+  },
+  "Home & Living": {
+    image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=600&q=80",
+    desc: "Bedding, bath & more",
+  },
+  "Kitchen & Dining": {
+    image: "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=600&q=80",
+    desc: "Cookware & supplies",
+  },
+  "Outdoors & Sports": {
+    image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80",
+    desc: "Beach, camping & sport",
+  },
+};
+
 export const products: Product[] = [
   // ── WOMEN'S BAGS ─────────────────────────────────────────────────────────────
   {

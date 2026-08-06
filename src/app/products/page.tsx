@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
-import { products, categories } from "@/lib/products";
+import { categories } from "@/lib/products";
+import { useAdminProducts, useAdminCategories } from "@/hooks/useAdminProducts";
 
 function ProductsContent() {
   const searchParams = useSearchParams();
@@ -12,11 +13,15 @@ function ProductsContent() {
   const [sort, setSort] = useState("default");
   const [search, setSearch] = useState("");
 
+  const allProducts = useAdminProducts();
+  const customCategories = useAdminCategories();
+  const allCategories = ["All", ...customCategories];
+
   useEffect(() => {
     setActiveCategory(searchParams.get("category") || "All");
   }, [searchParams]);
 
-  const filtered = products.filter((p) => {
+  const filtered = allProducts.filter((p) => {
     const matchCat  = activeCategory === "All" || p.category === activeCategory;
     const matchSearch = !search.trim() ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -71,7 +76,7 @@ function ProductsContent() {
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-8">
           {/* Category pills */}
           <div className="flex flex-wrap gap-2">
-            {categories.map((cat) => (
+            {allCategories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}

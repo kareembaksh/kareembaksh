@@ -1,41 +1,19 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import ProductCard from "@/components/ProductCard";
 import HeroSlider from "@/components/HeroSlider";
 import NewsletterSection from "@/components/NewsletterSection";
-import { getFeaturedProducts, categories } from "@/lib/products";
-
-
-const categoryMeta: Record<string, { image: string; desc: string }> = {
-  "Women's Bags": {
-    image: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=600&q=80",
-    desc: "28 styles",
-  },
-  "Accessories": {
-    image: "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&q=80",
-    desc: "Hats, wallets & more",
-  },
-  "Beauty & Fragrance": {
-    image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=600&q=80",
-    desc: "Perfumes & gift sets",
-  },
-  "Home & Living": {
-    image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=600&q=80",
-    desc: "Bedding, bath & more",
-  },
-  "Kitchen & Dining": {
-    image: "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=600&q=80",
-    desc: "Cookware & supplies",
-  },
-  "Outdoors & Sports": {
-    image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80",
-    desc: "Beach, camping & sport",
-  },
-};
+import { useAdminProducts, useAdminCategories, useAdminCategoryMeta } from "@/hooks/useAdminProducts";
+import { STATIC_CATEGORY_META } from "@/lib/products";
 
 export default function Home() {
-  const featured = getFeaturedProducts();
-  const shopCategories = categories.filter((c) => c !== "All");
+  const allProducts = useAdminProducts();
+  const allCategories = useAdminCategories();
+  const customMeta = useAdminCategoryMeta();
+  const featured = allProducts.filter(p => p.badge === "Hot" || p.badge === "Popular").slice(0, 8);
+  const shopCategories = allCategories.filter((c) => c !== "All");
 
   return (
     <main>
@@ -47,29 +25,32 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-bold text-zinc-900">Shop by Category</h2>
-            <p className="text-zinc-500 mt-2">Browse all 6 collections</p>
+            <p className="text-zinc-500 mt-2">Browse all {shopCategories.length} collections</p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-            {shopCategories.map((cat) => (
-              <Link
-                key={cat}
-                href={`/products?category=${encodeURIComponent(cat)}`}
-                className="group relative rounded-2xl overflow-hidden h-40 bg-zinc-100"
-              >
-                <Image
-                  src={categoryMeta[cat]?.image ?? ""}
-                  alt={cat}
-                  fill
-                  className="object-cover group-hover:scale-110 transition-transform duration-500"
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-3">
-                  <p className="text-white font-semibold text-xs leading-tight">{cat}</p>
-                  <p className="text-white/60 text-xs mt-0.5">{categoryMeta[cat]?.desc}</p>
-                </div>
-              </Link>
-            ))}
+            {shopCategories.map((cat) => {
+              const meta = customMeta[cat] || STATIC_CATEGORY_META[cat] || { image: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=600&q=80", desc: "View products" };
+              return (
+                <Link
+                  key={cat}
+                  href={`/products?category=${encodeURIComponent(cat)}`}
+                  className="group relative rounded-2xl overflow-hidden h-40 bg-zinc-100"
+                >
+                  <Image
+                    src={meta.image}
+                    alt={cat}
+                    fill
+                    className="object-cover group-hover:scale-110 transition-transform duration-500"
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                    <p className="text-white font-semibold text-xs leading-tight">{cat}</p>
+                    <p className="text-white/60 text-xs mt-0.5">{meta.desc}</p>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>
