@@ -136,7 +136,7 @@ function mergeAll(d: AdminData): Product[] {
 }
 
 // ── Misc constants ─────────────────────────────────────────────────────────────
-const BLANK: Omit<Product, "id"> = { name:"", category:"Women's Bags", price:0, originalPrice:undefined, image:"", images:[], description:"", badge:undefined, rating:4.5, reviews:0, quantity:100 };
+const BLANK: Omit<Product, "id"> = { name:"", category:"Women's Bags", price:0, originalPrice:undefined, image:"", images:[], description:"", badge:undefined, rating:4.5, reviews:0, quantity:100, sortOrder:0 };
 
 const BADGE_STYLES: Record<string, string> = { Hot:"bg-red-100 text-red-600", New:"bg-blue-100 text-blue-600", Sale:"bg-amber-100 text-amber-600", Popular:"bg-purple-100 text-purple-600" };
 
@@ -426,7 +426,7 @@ export default function AdminPanel() {
       else updateProd({...prodData, added:prodData.added.map(p=>p.id===editing.id?{...form,id:editing.id}:p)});
     } else {
       const newId = Math.max(...allProducts.map(p=>p.id),1000)+1;
-      updateProd({...prodData, added:[...prodData.added,{...form,id:newId}]});
+      updateProd({...prodData, added:[...prodData.added,{...form,id:newId,sortOrder:form.sortOrder??0}]});
     }
     showToast(editing?"Product updated.":"Product added."); setPage("products"); setEditing(null);
   };
@@ -930,12 +930,27 @@ export default function AdminPanel() {
                     <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Badge</label><select value={form.badge??""} onChange={e=>setForm(f=>({...f,badge:(e.target.value as Product["badge"])||undefined}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"><option value="">No Badge</option><option>New</option><option>Sale</option><option>Popular</option><option>Hot</option></select></div>
                   </div>
                 </div>
-                {/* Ratings */}
+                {/* Ratings & Position */}
                 <div className="p-6 border-b border-zinc-100 space-y-4">
-                  <p className="text-sm font-semibold text-zinc-800">Ratings</p>
+                  <p className="text-sm font-semibold text-zinc-800">Ratings & Display Position</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Rating (1–5)</label><input type="number" step="0.1" min="1" max="5" value={form.rating} onChange={e=>setForm(f=>({...f,rating:parseFloat(e.target.value)||4.5}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
                     <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Review Count</label><input type="number" min="0" value={form.reviews} onChange={e=>setForm(f=>({...f,reviews:parseInt(e.target.value)||0}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-600 mb-1.5">
+                      Sort Position
+                      <span className="ml-1.5 text-zinc-400 font-normal">(0 = top, 1 = second, etc. — applies in All &amp; category view)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.sortOrder ?? 0}
+                      onChange={e => setForm(f => ({...f, sortOrder: parseInt(e.target.value) || 0}))}
+                      className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"
+                      placeholder="0 (top)"
+                    />
+                    <p className="text-xs text-zinc-400 mt-1">Default: 0 (new products appear at the top)</p>
                   </div>
                 </div>
                 <div className="p-6 flex gap-3 justify-end bg-zinc-50">
