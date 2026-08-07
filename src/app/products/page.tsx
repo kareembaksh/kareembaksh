@@ -34,11 +34,15 @@ function ProductsContent() {
     if (sort === "price-asc")  return a.price - b.price;
     if (sort === "price-desc") return b.price - a.price;
     if (sort === "rating")     return b.rating - a.rating;
-    // default: sort by sortOrder (lower = first), then admin-added first (higher id = newer)
+    
     const aOrder = a.sortOrder ?? 999999;
     const bOrder = b.sortOrder ?? 999999;
     if (aOrder !== bOrder) return aOrder - bOrder;
-    return b.id - a.id; // newer products first if same sortOrder
+    
+    // If both are admin-added products, show newest first
+    if (a.id > 1000 && b.id > 1000) return b.id - a.id;
+    // Otherwise preserve original array order (stable sort)
+    return 0;
   });
 
   return (

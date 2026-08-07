@@ -19,7 +19,9 @@ export default function Home() {
       const aOrder = a.sortOrder ?? 999999;
       const bOrder = b.sortOrder ?? 999999;
       if (aOrder !== bOrder) return aOrder - bOrder;
-      return b.id - a.id;
+      
+      if (a.id > 1000 && b.id > 1000) return b.id - a.id;
+      return 0;
     })
     .slice(0, 8);
   const shopCategories = allCategories.filter((c) => c !== "All");
