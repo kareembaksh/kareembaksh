@@ -316,16 +316,24 @@ export default function AdminPanel() {
   };
 
   const handleCatImgUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      if (ev.target?.result) {
-        if (isEdit) setCatMgrEditImage(ev.target.result as string);
-        else setCatMgrImage(ev.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file, index) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (ev.target?.result) {
+          if (index === 0) {
+            if (isEdit) setCatMgrEditImage(ev.target.result as string);
+            else setCatMgrImage(ev.target.result as string);
+          } else {
+            if (isEdit) setCatMgrEditMedia(prev => [...prev, ev.target!.result as string]);
+            else setCatMgrMedia(prev => [...prev, ev.target!.result as string]);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
   };
 
   const handleCatMediaUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
@@ -1458,7 +1466,7 @@ export default function AdminPanel() {
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                         </button>
-                        <input type="file" ref={catFileRef} className="hidden" accept="image/*,video/*" onChange={(e) => handleCatImgUpload(e, false)} />
+                        <input type="file" ref={catFileRef} className="hidden" accept="image/*,video/*" multiple onChange={(e) => handleCatImgUpload(e, false)} />
                       </div>
                       <input
                         type="text"
@@ -1536,7 +1544,7 @@ export default function AdminPanel() {
                                 >
                                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                                 </button>
-                                <input type="file" ref={catEditFileRef} className="hidden" accept="image/*,video/*" onChange={(e) => handleCatImgUpload(e, true)} />
+                                <input type="file" ref={catEditFileRef} className="hidden" accept="image/*,video/*" multiple onChange={(e) => handleCatImgUpload(e, true)} />
                               </div>
                               <input
                                 type="text"
