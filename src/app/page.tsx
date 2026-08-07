@@ -13,7 +13,15 @@ export default function Home() {
   const allProducts = useAdminProducts();
   const allCategories = useAdminCategories();
   const customMeta = useAdminCategoryMeta();
-  const featured = allProducts.filter(p => p.badge === "Hot" || p.badge === "Popular").slice(0, 8);
+  const featured = allProducts
+    .filter(p => p.badge === "Hot" || p.badge === "Popular")
+    .sort((a, b) => {
+      const aOrder = a.sortOrder ?? 999999;
+      const bOrder = b.sortOrder ?? 999999;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return b.id - a.id;
+    })
+    .slice(0, 8);
   const shopCategories = allCategories.filter((c) => c !== "All");
 
   return (
