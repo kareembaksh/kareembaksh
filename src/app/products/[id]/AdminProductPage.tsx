@@ -1,47 +1,82 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ProductImages from "./ProductImages";
-import { getProductById, products } from "@/lib/products";
 import ProductCard from "@/components/ProductCard";
 import AddToCartSection from "./AddToCartSection";
 import ReviewForm from "./ReviewForm";
-import ProductVisibilityGuard from "./ProductVisibilityGuard";
-import AdminProductPage from "./AdminProductPage";
+import { products as staticProducts, getProductById } from "@/lib/products";
+import type { Product } from "@/lib/types";
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const { id } = await params;
-  const product = getProductById(Number(id));
-  if (!product) return { title: "Product | Kareem Baksh Store" };
+const PROD_KEY = "kb_admin_data";
 
-  return {
-    title: `${product.name} | Kareem Baksh Store`,
-    description: product.description,
-    openGraph: {
-      title: product.name,
-      description: product.description,
-      images: [{ url: product.image, width: 600, height: 600, alt: product.name }],
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: product.name,
-      description: product.description,
-      images: [product.image],
-    },
-  };
+function mergeProducts(): Product[] {
+  try {
+    const raw = localStorage.getItem(PROD_KEY);
+    if (!raw) return staticProducts;
+    const d = JSON.parse(raw);
+    const base = staticProducts
+      .filter((p) => !(d.deleted || []).includes(p.id))
+      .map((p) => ({ ...p, ...(d.overrides?.[p.id] ?? {}) }));
+    return [...base, ...(d.added || [])];
+  } catch {
+    return staticProducts;
+  }
 }
 
-export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const productId = Number(id);
-  const product = getProductById(productId);
+interface Props {
+  productId: number;
+}
 
-  // Admin-added product (not in static list) — render client-side from localStorage
-  if (!product) {
-    return <AdminProductPage productId={productId} />;
+export default function AdminProductPage({ productId }: Props) {
+  const router = useRouter();
+  const [product, setProduct] = useState<Product | null | undefined>(undefined); // undefined = loading
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    const all = mergeProducts();
+    setAllProducts(all);
+
+    // Check visibility
+    try {
+      const raw = localStorage.getItem(PROD_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        const hidden: number[] = d.hidden || [];
+        const deleted: number[] = d.deleted || [];
+        if (hidden.includes(productId) || deleted.includes(productId)) {
+          router.replace("/products");
+          return;
+        }
+      }
+    } catch {}
+
+    const found = all.find((p) => p.id === productId);
+    setProduct(found ?? null);
+  }, [productId, router]);
+
+  // Loading state
+  if (product === undefined) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-4 border-rose-300 border-t-rose-600 animate-spin" />
+      </div>
+    );
   }
 
-  const related = products
+  // Not found
+  if (!product) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 text-zinc-500">
+        <p className="text-2xl font-bold text-zinc-900">Product Not Found</p>
+        <Link href="/products" className="text-rose-500 hover:underline text-sm">← Back to Products</Link>
+      </div>
+    );
+  }
+
+  const related = allProducts
     .filter((p) => p.category === product.category && p.id !== product.id)
     .slice(0, 4);
 
@@ -50,8 +85,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
     : null;
 
   return (
-    <ProductVisibilityGuard productId={product.id}>
-      <main>
+    <main>
       {/* Breadcrumb */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <nav className="flex items-center gap-2 text-sm text-zinc-400">
@@ -70,7 +104,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
       {/* Product detail */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid lg:grid-cols-2 gap-12">
-          {/* Image / Gallery — reads localStorage overrides client-side */}
+          {/* Image / Gallery */}
           <ProductImages product={product} />
 
           {/* Info */}
@@ -177,6 +211,5 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         </section>
       )}
     </main>
-    </ProductVisibilityGuard>
   );
 }
