@@ -55,6 +55,9 @@ export default function AdminProductPage({ productId }: Props) {
 
     const found = all.find((p) => p.id === productId);
     setProduct(found ?? null);
+
+    // Always scroll to top
+    window.scrollTo({ top: 0, behavior: "instant" });
   }, [productId, router]);
 
   // Loading state
