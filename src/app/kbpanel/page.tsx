@@ -1466,7 +1466,7 @@ export default function AdminPanel() {
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                         </button>
-                        <input type="file" ref={catFileRef} className="hidden" accept="image/*,video/*" multiple onChange={(e) => handleCatImgUpload(e, false)} />
+                        <input type="file" ref={catFileRef} className="hidden" accept="image/*,video/*" onChange={(e) => handleCatImgUpload(e, false)} />
                       </div>
                       <input
                         type="text"
@@ -1477,19 +1477,38 @@ export default function AdminPanel() {
                         onKeyDown={e => e.key === "Enter" && addCustomCat()}
                       />
                     </div>
-                    {/* Add extra media to new category */}
-                    <div className="flex gap-2 items-center flex-wrap">
-                      {catMgrMedia.map((src, i) => {
-                        const isVideo = src.match(/\.(mp4|webm)$/i) || src.startsWith("data:video");
-                        return (
-                          <div key={i} className="relative group">
-                            {isVideo ? <video src={src} className="w-8 h-8 object-cover rounded-md border" muted playsInline /> : <img src={src} className="w-8 h-8 object-cover rounded-md border" />}
-                            <button type="button" onClick={() => setCatMgrMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
-                          </div>
-                        )
-                      })}
-                      <input type="file" id="catExtraFileAdd" className="hidden" accept="image/*,video/*" multiple onChange={(e) => handleCatMediaUpload(e, false)} />
-                      <button onClick={() => document.getElementById("catExtraFileAdd")?.click()} className="text-[10px] bg-zinc-100 hover:bg-zinc-200 text-zinc-600 px-2 py-1 rounded transition-colors">+ Add Media</button>
+                    {/* Extra media for new category */}
+                    <div className="border border-zinc-200 rounded-xl p-3 bg-zinc-50">
+                      <p className="text-[11px] font-semibold text-zinc-600 mb-2">Extra Media <span className="font-normal text-zinc-400">(additional images/videos for carousel)</span></p>
+                      {catMgrMedia.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {catMgrMedia.map((src, i) => {
+                            const isVideo = src.match(/\.(mp4|webm)$/i) || src.startsWith("data:video");
+                            return (
+                              <div key={i} className="relative group">
+                                {isVideo ? <video src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" muted playsInline /> : <img src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" />}
+                                <button type="button" onClick={() => setCatMgrMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          id="catExtraUrlAdd"
+                          placeholder="Paste media URL..."
+                          className="flex-1 border border-zinc-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                          onKeyDown={e => { if (e.key === "Enter") { const val = (e.target as HTMLInputElement).value.trim(); if (val) { setCatMgrMedia(prev => [...prev, val]); (e.target as HTMLInputElement).value = ""; } } }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { const el = document.getElementById("catExtraUrlAdd") as HTMLInputElement; const val = el?.value.trim(); if (val) { setCatMgrMedia(prev => [...prev, val]); el.value = ""; } }}
+                          className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-700 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                        >Add URL</button>
+                        <input type="file" id="catExtraFileAdd" className="hidden" accept="image/*,video/*" onChange={(e) => handleCatMediaUpload(e, false)} />
+                        <button type="button" onClick={() => document.getElementById("catExtraFileAdd")?.click()} className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap">Upload</button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1555,18 +1574,38 @@ export default function AdminPanel() {
                                 className="flex-1 border border-zinc-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-300 min-w-0"
                               />
                             </div>
-                            <div className="flex gap-2 items-center flex-wrap">
-                              {catMgrEditMedia.map((src, i) => {
-                                const isVideo = src.match(/\.(mp4|webm)$/i) || src.startsWith("data:video");
-                                return (
-                                  <div key={i} className="relative group">
-                                    {isVideo ? <video src={src} className="w-8 h-8 object-cover rounded-md border" muted playsInline /> : <img src={src} className="w-8 h-8 object-cover rounded-md border" />}
-                                    <button type="button" onClick={() => setCatMgrEditMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 text-white rounded-full text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100">✕</button>
-                                  </div>
-                                )
-                              })}
-                              <input type="file" id={`catExtraFileEdit-${cat}`} className="hidden" accept="image/*,video/*" multiple onChange={(e) => handleCatMediaUpload(e, true)} />
-                              <button onClick={() => document.getElementById(`catExtraFileEdit-${cat}`)?.click()} className="text-[10px] bg-zinc-100 hover:bg-zinc-200 text-zinc-600 px-2 py-1 rounded transition-colors">+ Add Media</button>
+                            {/* Extra media for editing category */}
+                            <div className="border border-zinc-200 rounded-xl p-3 bg-zinc-50">
+                              <p className="text-[11px] font-semibold text-zinc-600 mb-2">Extra Media <span className="font-normal text-zinc-400">(carousel images/videos)</span></p>
+                              {catMgrEditMedia.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                  {catMgrEditMedia.map((src, i) => {
+                                    const isVideo = src.match(/\.(mp4|webm)$/i) || src.startsWith("data:video");
+                                    return (
+                                      <div key={i} className="relative group">
+                                        {isVideo ? <video src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" muted playsInline /> : <img src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" />}
+                                        <button type="button" onClick={() => setCatMgrEditMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  id={`catExtraUrlEdit-${cat}`}
+                                  placeholder="Paste media URL..."
+                                  className="flex-1 border border-zinc-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                                  onKeyDown={e => { if (e.key === "Enter") { const val = (e.target as HTMLInputElement).value.trim(); if (val) { setCatMgrEditMedia(prev => [...prev, val]); (e.target as HTMLInputElement).value = ""; } } }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => { const el = document.getElementById(`catExtraUrlEdit-${cat}`) as HTMLInputElement; const val = el?.value.trim(); if (val) { setCatMgrEditMedia(prev => [...prev, val]); el.value = ""; } }}
+                                  className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-700 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                                >Add URL</button>
+                                <input type="file" id={`catExtraFileEdit-${cat}`} className="hidden" accept="image/*,video/*" onChange={(e) => handleCatMediaUpload(e, true)} />
+                                <button type="button" onClick={() => document.getElementById(`catExtraFileEdit-${cat}`)?.click()} className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap">Upload</button>
+                              </div>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
                               <button onClick={saveEditCat} className="text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white px-4 py-1.5 rounded-lg transition-colors whitespace-nowrap">Save</button>
