@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import { categories } from "@/lib/products";
 import { useAdminProducts, useAdminCategories } from "@/hooks/useAdminProducts";
 
 function ProductsContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  
   const initialCategory = searchParams.get("category") || "All";
   const [activeCategory, setActiveCategory] = useState(initialCategory);
   const [sort, setSort] = useState("default");
@@ -20,6 +22,18 @@ function ProductsContent() {
   useEffect(() => {
     setActiveCategory(searchParams.get("category") || "All");
   }, [searchParams]);
+
+  const handleCategoryChange = (cat: string) => {
+    setActiveCategory(cat);
+    const params = new URLSearchParams(searchParams.toString());
+    if (cat === "All") {
+      params.delete("category");
+    } else {
+      params.set("category", cat);
+    }
+    const newUrl = params.toString() ? `/products?${params.toString()}` : "/products";
+    router.replace(newUrl, { scroll: false });
+  };
 
   const filtered = allProducts.filter((p) => {
     const matchCat  = activeCategory === "All" || p.category === activeCategory;
@@ -87,7 +101,7 @@ function ProductsContent() {
             {allCategories.map((cat) => (
               <button
                 key={cat}
-                onClick={() => setActiveCategory(cat)}
+                onClick={() => handleCategoryChange(cat)}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                   activeCategory === cat
                     ? "bg-rose-500 text-white shadow-md shadow-rose-200"
