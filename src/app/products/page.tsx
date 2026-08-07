@@ -129,6 +129,7 @@ function ProductsContent() {
             </select>
           </div>
         </div>
+        </div>
 
         {/* Grid */}
         {sorted.length === 0 ? (
