@@ -1,13 +1,15 @@
 import { Product } from "./types";
 
-export const STATIC_CATEGORY_META: Record<string, { image: string; desc: string }> = {
+export const STATIC_CATEGORY_META: Record<string, { image: string; desc: string; media?: string[] }> = {
   "Women's Bags": {
     image: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=600&q=80",
     desc: "28 styles",
+    media: ["https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=600&q=80", "https://images.unsplash.com/photo-1566150905458-1bf1fc113f0d?w=600&q=80"]
   },
   "Accessories": {
     image: "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&q=80",
     desc: "Hats, wallets & more",
+    media: ["https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&q=80"]
   },
   "Beauty & Fragrance": {
     image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=600&q=80",

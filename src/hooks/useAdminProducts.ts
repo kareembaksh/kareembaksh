@@ -52,7 +52,7 @@ export function useAdminCategories() {
 }
 
 export function useAdminCategoryMeta() {
-  const [meta, setMeta] = useState<Record<string, { image: string; desc: string }>>({});
+  const [meta, setMeta] = useState<Record<string, { image: string; desc: string; media?: string[] }>>({});
   useEffect(() => {
     try {
       const raw = localStorage.getItem("kb_category_meta");

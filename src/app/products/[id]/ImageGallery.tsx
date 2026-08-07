@@ -16,8 +16,15 @@ const BADGE_COLORS: Record<string, string> = {
   Hot: "bg-orange-500",
 };
 
+const isVideo = (url: string) => {
+  if (!url) return false;
+  return url.match(/\.(mp4|webm|ogg)$/i) || url.startsWith("data:video");
+};
+
 export default function ImageGallery({ images, name, badge }: Props) {
   const [selected, setSelected] = useState(0);
+  const currentMedia = images[selected];
+  const currentIsVideo = isVideo(currentMedia);
 
   return (
     <div className="flex flex-col gap-4">
@@ -27,30 +34,54 @@ export default function ImageGallery({ images, name, badge }: Props) {
             {badge}
           </span>
         )}
-        <Image
-          src={images[selected]}
-          alt={name}
-          fill
-          className="object-cover transition-opacity duration-200"
-          priority
-          sizes="(max-width: 1024px) 100vw, 50vw"
-        />
+        {currentIsVideo ? (
+          <video
+            src={currentMedia}
+            autoPlay
+            loop
+            muted
+            playsInline
+            controls
+            className="w-full h-full object-contain bg-black transition-opacity duration-200"
+          />
+        ) : (
+          <Image
+            src={currentMedia}
+            alt={name}
+            fill
+            className="object-cover transition-opacity duration-200"
+            priority
+            sizes="(max-width: 1024px) 100vw, 50vw"
+          />
+        )}
       </div>
 
       {images.length > 1 && (
         <div className="flex gap-3 flex-wrap">
-          {images.map((src, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setSelected(i)}
-              className={`relative w-20 h-20 rounded-xl overflow-hidden bg-zinc-100 flex-shrink-0 border-2 transition-colors ${
-                i === selected ? "border-rose-500" : "border-transparent hover:border-zinc-300"
-              }`}
-            >
-              <Image src={src} alt={`${name} view ${i + 1}`} fill className="object-cover" sizes="80px" />
-            </button>
-          ))}
+          {images.map((src, i) => {
+            const thumbIsVideo = isVideo(src);
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setSelected(i)}
+                className={`relative w-20 h-20 rounded-xl overflow-hidden bg-zinc-100 flex-shrink-0 border-2 transition-colors ${
+                  i === selected ? "border-rose-500" : "border-transparent hover:border-zinc-300"
+                }`}
+              >
+                {thumbIsVideo ? (
+                  <video src={src} className="w-full h-full object-cover pointer-events-none" muted playsInline />
+                ) : (
+                  <Image src={src} alt={`${name} view ${i + 1}`} fill className="object-cover pointer-events-none" sizes="80px" />
+                )}
+                {thumbIsVideo && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 text-white pointer-events-none">
+                    <svg className="w-6 h-6 opacity-80" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { Product } from "@/lib/types";
 import { useCart } from "./CartProvider";
+import MediaCarousel from "./MediaCarousel";
 
 const badgeColors: Record<string, string> = {
   New: "bg-blue-500",
@@ -26,12 +26,11 @@ export default function ProductCard({ product }: { product: Product }) {
 
       {/* Image */}
       <Link href={`/products/${product.id}`}>
-        <div className="relative h-56 bg-zinc-100 overflow-hidden">
-          <Image
-            src={product.image}
+        <div className="relative h-56 bg-zinc-100 overflow-hidden pointer-events-none">
+          <MediaCarousel
+            media={[product.image, ...(product.images || [])].filter(Boolean)}
             alt={product.name}
-            fill
-            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            imgClassName="object-cover group-hover:scale-105 transition-transform duration-500"
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
           />
         </div>

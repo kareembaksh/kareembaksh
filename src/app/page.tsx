@@ -5,6 +5,7 @@ import Image from "next/image";
 import ProductCard from "@/components/ProductCard";
 import HeroSlider from "@/components/HeroSlider";
 import NewsletterSection from "@/components/NewsletterSection";
+import MediaCarousel from "@/components/MediaCarousel";
 import { useAdminProducts, useAdminCategories, useAdminCategoryMeta } from "@/hooks/useAdminProducts";
 import { STATIC_CATEGORY_META } from "@/lib/products";
 
@@ -30,20 +31,20 @@ export default function Home() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {shopCategories.map((cat) => {
               const meta = customMeta[cat] || STATIC_CATEGORY_META[cat] || { image: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=600&q=80", desc: "View products" };
+              const allMedia = [meta.image, ...(meta.media || [])].filter(Boolean);
               return (
                 <Link
                   key={cat}
                   href={`/products?category=${encodeURIComponent(cat)}`}
                   className="group relative rounded-2xl overflow-hidden h-40 bg-zinc-100"
                 >
-                  <Image
-                    src={meta.image}
+                  <MediaCarousel
+                    media={allMedia}
                     alt={cat}
-                    fill
-                    className="object-cover group-hover:scale-110 transition-transform duration-500"
+                    imgClassName="object-cover group-hover:scale-110 transition-transform duration-500"
                     sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
                   <div className="absolute bottom-0 left-0 right-0 p-3">
                     <p className="text-white font-semibold text-xs leading-tight">{cat}</p>
                     <p className="text-white/60 text-xs mt-0.5">{meta.desc}</p>
