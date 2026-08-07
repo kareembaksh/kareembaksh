@@ -50,3 +50,4 @@ export default function ProductImages({ product }: Props) {
 
   // Always use ImageGallery so zoom works even with a single image
   return <ImageGallery images={images} name={product.name} badge={product.badge} />;
+}
