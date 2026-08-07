@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { products as staticProducts, categories, STATIC_CATEGORY_META } from "@/lib/products";
-import type { Product } from "@/lib/types";
+import type { Product, Review, ReviewStatus } from "@/lib/types";
 
 const PASSWORD = "KBadmin2025";
 const PROD_KEY   = "kb_admin_data";
@@ -35,7 +35,6 @@ interface AdminData {
 }
 
 type OrderStatus  = "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
-type ReviewStatus = "Pending" | "Approved" | "Rejected";
 
 interface OrderItem { productId: number; name: string; price: number; qty: number; image: string; }
 
@@ -43,15 +42,6 @@ interface Order {
   id: string; date: string;
   customer: { name: string; email: string; phone: string; address: string; city: string; state: string; zip: string };
   items: OrderItem[]; total: number; status: OrderStatus; tracking?: string; notes?: string;
-}
-
-interface Review {
-  id: string; date: string;
-  productId: number; productName: string;
-  author: string; email: string;
-  rating: number; title: string; body: string;
-  status: ReviewStatus;
-  reply?: string;
 }
 
 // ── CSV helpers ────────────────────────────────────────────────────────────────
@@ -153,7 +143,7 @@ const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month:"
 const Stars = ({ n }: { n: number }) => <span className="text-amber-400 text-sm">{"★".repeat(n)}{"☆".repeat(5-n)}</span>;
 
 // ── Admin panel ────────────────────────────────────────────────────────────────
-type Page = "dashboard"|"products"|"add"|"orders"|"order-detail"|"reviews"|"settings";
+type Page = "dashboard"|"products"|"add"|"orders"|"order-detail"|"reviews"|"settings"|"stock";
 
 export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
@@ -165,6 +155,13 @@ export default function AdminPanel() {
   const [search, setSearch]           = useState(""); const [catFilter, setCatFilter] = useState("All");
   const [prodPage, setProdPage]       = useState(1);
   const [visFilter, setVisFilter]     = useState<"All"|"Visible"|"Hidden">("All");
+  const [stockFilter, setStockFilter]     = useState<"All"|"In Stock"|"Low Stock"|"Out of Stock">("All");
+  const [stockSearch, setStockSearch]     = useState("");
+  const [stockPage, setStockPage]         = useState(1);
+  const [stockQtyOp, setStockQtyOp]       = useState<"off"|"lt"|"lte"|"gt"|"gte">("off");
+  const [stockQtyVal, setStockQtyVal]     = useState(10);
+  const [editingQty, setEditingQty]       = useState<number|null>(null);
+  const [editingQtyVal, setEditingQtyVal] = useState("");
   const [editing, setEditing]         = useState<Product|null>(null);
   const [form, setForm]               = useState<Omit<Product,"id">>(BLANK);
   const [imgMode, setImgMode]         = useState<"url"|"upload">("url");
@@ -573,6 +570,7 @@ export default function AdminPanel() {
           <nav className="space-y-1">
             <NavBtn k="dashboard" label="Dashboard"  icon="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
             <NavBtn k="products" label="Products"    icon="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+            <NavBtn k="stock"    label="Stock Manager" icon="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
             <NavBtn k="orders"   label="Orders"      icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" badge={stats.pending||undefined}/>
             <NavBtn k="reviews"  label="Reviews"     icon="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" badge={stats.pendingRevs||undefined}/>
             <NavBtn k="settings" label="Settings"    icon="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -599,7 +597,7 @@ export default function AdminPanel() {
         </aside>
 
         {/* Main */}
-        <main className={`flex-1 flex flex-col min-h-0 p-4 pb-20 md:p-6 md:pb-6 ${["products","orders","reviews"].includes(page) ? "overflow-hidden" : "overflow-auto"}`}>
+        <main className={`flex-1 flex flex-col min-h-0 p-4 pb-20 md:p-6 md:pb-6 ${["products","orders","reviews","stock"].includes(page) ? "overflow-hidden" : "overflow-auto"}`}>
 
           {/* ── DASHBOARD ─────────────────────────────────────────────── */}
           {page==="dashboard"&&(
@@ -960,6 +958,188 @@ export default function AdminPanel() {
               </div>
             </div>
           )}
+
+          {/* ── STOCK MANAGER ─────────────────────────────────────────────── */}
+          {page==="stock"&&(() => {
+            const PER_PAGE = 15;
+
+            const stockProducts = allProducts.filter(p => {
+              // status filter
+              if (stockFilter === "In Stock"     && (p.quantity < 10)) return false;
+              if (stockFilter === "Low Stock"    && (p.quantity >= 10 || p.quantity === 0)) return false;
+              if (stockFilter === "Out of Stock" && p.quantity > 0) return false;
+              // name search
+              if (stockSearch && !p.name.toLowerCase().includes(stockSearch.toLowerCase())) return false;
+              // quantity range filter
+              if (stockQtyOp === "lt"  && !(p.quantity <  stockQtyVal)) return false;
+              if (stockQtyOp === "lte" && !(p.quantity <= stockQtyVal)) return false;
+              if (stockQtyOp === "gt"  && !(p.quantity >  stockQtyVal)) return false;
+              if (stockQtyOp === "gte" && !(p.quantity >= stockQtyVal)) return false;
+              return true;
+            });
+            const totalStockPages = Math.max(1, Math.ceil(stockProducts.length / PER_PAGE));
+            const paginated = stockProducts.slice((stockPage-1)*PER_PAGE, stockPage*PER_PAGE);
+
+            const updateStock = (id: number, newQty: number) => {
+              if (newQty < 0) newQty = 0;
+              const newData: typeof prodData = {
+                ...prodData,
+                overrides: { ...prodData.overrides },
+                added:     prodData.added.map(a => a.id === id ? { ...a, quantity: newQty } : a),
+              };
+              const isStatic = staticProducts.some(p => p.id === id);
+              if (isStatic) {
+                newData.overrides = { ...newData.overrides, [id]: { ...(newData.overrides[id] || {}), quantity: newQty } };
+              }
+              setProdData(newData);
+              saveProd(newData);
+              setAllProducts(mergeAll(newData));
+              showToast("Stock updated.");
+            };
+
+            const commitEdit = (id: number) => {
+              const val = parseInt(editingQtyVal);
+              if (!isNaN(val)) updateStock(id, val);
+              setEditingQty(null);
+            };
+
+            return (
+              <div className="flex flex-col h-full min-h-0">
+                {/* ─ Stat cards ─ */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 flex-shrink-0">
+                  {(["All","In Stock","Low Stock","Out of Stock"] as const).map(s => {
+                    const count = allProducts.filter(p => s==="In Stock"?p.quantity>=10:s==="Low Stock"?p.quantity>0&&p.quantity<10:s==="Out of Stock"?p.quantity===0:true).length;
+                    const active = stockFilter===s;
+                    return (
+                      <button key={s} onClick={()=>{setStockFilter(s);setStockPage(1);}} className={`rounded-xl p-3.5 text-left border-2 transition-all ${active?"border-rose-400 bg-rose-50":"border-zinc-200 bg-white hover:border-zinc-300"}`}>
+                        <p className={`text-2xl font-bold ${s==="All"?"text-zinc-900":s==="In Stock"?"text-green-600":s==="Low Stock"?"text-amber-500":"text-red-500"}`}>{count}</p>
+                        <p className="text-xs text-zinc-400 mt-0.5 font-medium">{s}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* ─ Filters bar ─ */}
+                <div className="flex flex-wrap gap-3 mb-4 flex-shrink-0">
+                  {/* Name search */}
+                  <div className="relative flex-1 min-w-[180px]">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <input type="text" value={stockSearch} onChange={e=>{setStockSearch(e.target.value);setStockPage(1);}} placeholder="Search product name…" className="w-full border border-zinc-300 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                  </div>
+                  {/* Qty operator */}
+                  <select value={stockQtyOp} onChange={e=>{setStockQtyOp(e.target.value as any);setStockPage(1);}} className="border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 bg-white text-zinc-700">
+                    <option value="off">Quantity (any)</option>
+                    <option value="lt">Qty &lt; …</option>
+                    <option value="lte">Qty ≤ …</option>
+                    <option value="gt">Qty &gt; …</option>
+                    <option value="gte">Qty ≥ …</option>
+                  </select>
+                  {/* Qty value input (only shown when op selected) */}
+                  {stockQtyOp !== "off" && (
+                    <input type="number" min={0} value={stockQtyVal} onChange={e=>{setStockQtyVal(parseInt(e.target.value)||0);setStockPage(1);}} className="w-24 border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
+                  )}
+                </div>
+
+                {/* ─ Table card ─ */}
+                <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm flex flex-col flex-1 min-h-0">
+                  <div className="overflow-x-auto overflow-y-auto flex-1">
+                    <table className="w-full text-sm">
+                      <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0 z-10 shadow-sm">
+                        <tr>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider w-[40%]">Product</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Category</th>
+                          <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
+                          <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Stock / Update</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {paginated.map(p => (
+                          <tr key={p.id} className="hover:bg-zinc-50/60 transition-colors">
+                            {/* Product */}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-100 flex-shrink-0 border border-zinc-200">
+                                  {p.image && <img src={p.image} alt={p.name} className="w-full h-full object-cover"/>}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-zinc-900 text-xs leading-snug truncate max-w-[200px]">{p.name}</p>
+                                  <p className="text-zinc-400 text-[11px] mt-0.5">#{p.id}</p>
+                                </div>
+                              </div>
+                            </td>
+                            {/* Category */}
+                            <td className="px-4 py-3">
+                              <span className="inline-flex text-xs text-zinc-600 bg-zinc-100 px-2.5 py-1 rounded-lg font-medium whitespace-nowrap">{p.category}</span>
+                            </td>
+                            {/* Status badge */}
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${p.quantity>=10?"bg-green-100 text-green-700":p.quantity>0?"bg-amber-100 text-amber-700":"bg-red-100 text-red-700"}`}>
+                                {p.quantity>=10?"In Stock":p.quantity>0?"Low Stock":"Out of Stock"}
+                              </span>
+                            </td>
+                            {/* Stock update controls */}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button onClick={()=>updateStock(p.id, p.quantity-10)} className="px-2 py-1 text-xs font-semibold bg-zinc-100 text-zinc-600 hover:bg-zinc-200 rounded-lg transition-colors">-10</button>
+                                <button onClick={()=>updateStock(p.id, p.quantity-1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 font-bold text-base transition-colors">−</button>
+                                {/* Inline editable qty */}
+                                {editingQty === p.id ? (
+                                  <input
+                                    autoFocus
+                                    type="number"
+                                    min={0}
+                                    value={editingQtyVal}
+                                    onChange={e=>setEditingQtyVal(e.target.value)}
+                                    onBlur={()=>commitEdit(p.id)}
+                                    onKeyDown={e=>{if(e.key==="Enter")commitEdit(p.id);if(e.key==="Escape")setEditingQty(null);}}
+                                    className="w-16 text-center font-bold text-zinc-900 border-2 border-rose-400 rounded-lg px-1 py-1 text-sm focus:outline-none"
+                                  />
+                                ) : (
+                                  <button
+                                    title="Click to edit directly"
+                                    onClick={()=>{setEditingQty(p.id);setEditingQtyVal(String(p.quantity));}}
+                                    className="w-16 h-8 text-center font-bold text-zinc-900 border border-dashed border-zinc-300 rounded-lg hover:border-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-all text-sm"
+                                  >
+                                    {p.quantity}
+                                  </button>
+                                )}
+                                <button onClick={()=>updateStock(p.id, p.quantity+1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 font-bold text-base transition-colors">+</button>
+                                <button onClick={()=>updateStock(p.id, p.quantity+10)} className="px-2 py-1 text-xs font-semibold bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg transition-colors">+10</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {stockProducts.length===0&&(
+                          <tr><td colSpan={4} className="px-5 py-16 text-center">
+                            <svg className="w-10 h-10 mx-auto mb-3 text-zinc-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            <p className="text-sm font-medium text-zinc-400">No products match your filters</p>
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* ─ Pagination footer (same style as Products) ─ */}
+                  <div className="px-5 py-3.5 border-t border-zinc-100 bg-zinc-50/50 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+                    <p className="text-xs text-zinc-500">
+                      Showing <span className="font-semibold text-zinc-800">{stockProducts.length>0?(stockPage-1)*PER_PAGE+1:0}</span>–<span className="font-semibold text-zinc-800">{Math.min(stockPage*PER_PAGE,stockProducts.length)}</span> of <span className="font-semibold text-zinc-800">{stockProducts.length}</span> products
+                      {totalStockPages>1&&<span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-600">{stockPage}</span> of {totalStockPages}</span>}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button onClick={()=>setStockPage(p=>Math.max(1,p-1))} disabled={stockPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                      {Array.from({length:totalStockPages},(_,i)=>i+1).filter(n=>n===1||n===totalStockPages||Math.abs(n-stockPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{if(idx>0&&(n as number)-(arr[idx-1] as number)>1)acc.push('...');acc.push(n);return acc;},[]).map((n,i)=>
+                        typeof n==='string'
+                          ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span>
+                          : <button key={i} onClick={()=>setStockPage(n as number)} className={`min-w-[32px] h-8 text-xs font-semibold rounded-lg border transition-colors ${stockPage===n?'bg-rose-500 border-rose-500 text-white shadow-sm shadow-rose-200':'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'}`}>{n}</button>
+                      )}
+                      <button onClick={()=>setStockPage(p=>Math.min(totalStockPages,p+1))} disabled={stockPage===totalStockPages} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">Next →</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
 
           {/* ── ORDERS LIST ──────────────────────────────────────────────── */}
           {page==="orders"&&(
