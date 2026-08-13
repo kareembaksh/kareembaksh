@@ -3,46 +3,19 @@
 import { useState, useEffect, useRef } from "react";
 import { products as staticProducts, categories, STATIC_CATEGORY_META } from "@/lib/products";
 import type { Product, Review, ReviewStatus } from "@/lib/types";
+import {
+  loadAdminDataFS, saveAdminDataFS, onAdminDataChange, type AdminData,
+  loadOrdersFS, saveOrderFS, updateOrderFS, onOrdersChange, type Order, type OrderItem, type OrderStatus,
+  loadReviewsFS, addReviewFS, updateReviewFS, deleteReviewFS, onReviewsChange,
+  loadPromosFS, savePromoFS, deletePromoFS, type PromoCode,
+} from "@/lib/firestore";
 
-const PASSWORD = "KBadmin2025";
-const PROD_KEY   = "kb_admin_data";
-const ORDER_KEY  = "kb_orders";
-const REV_KEY    = "kb_reviews";
-const PROMO_KEY  = "kb_promos";
-const CAT_KEY    = "kb_categories";
+const PASSWORD  = "KBadmin2025";
+const PROMO_KEY = "kb_promos";
+const CAT_KEY   = "kb_categories";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Types (still needed locally) ──────────────────────────────────────────────
 type DiscountType = "percent" | "fixed";
-
-interface PromoCode {
-  id: string;
-  code: string;
-  description: string;
-  type: DiscountType;
-  value: number;
-  minOrder?: number;
-  startAt?: string;   // ISO datetime
-  expiresAt?: string; // ISO datetime
-  active: boolean;
-}
-
-// ── Types ──────────────────────────────────────────────────────────────────────
-interface AdminData {
-  overrides: Record<number, Partial<Product>>;
-  added: Product[];
-  deleted: number[];
-  hidden: number[];
-}
-
-type OrderStatus  = "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
-
-interface OrderItem { productId: number; name: string; price: number; qty: number; image: string; }
-
-interface Order {
-  id: string; date: string;
-  customer: { name: string; email: string; phone: string; address: string; city: string; state: string; zip: string };
-  items: OrderItem[]; total: number; status: OrderStatus; tracking?: string; notes?: string;
-}
 
 // ── CSV helpers ────────────────────────────────────────────────────────────────
 function csvEscape(v: unknown): string {
@@ -79,46 +52,6 @@ function exportReviewsCSV(reviews: Review[]) {
   const rows   = reviews.map(r => [r.id, r.date, r.productId, r.productName, r.author, r.email, r.rating, r.title, r.body, r.status, r.reply ?? ""]);
   downloadCSV("kb_reviews.csv", [header, ...rows]);
 }
-
-// ── Seed data ──────────────────────────────────────────────────────────────────
-const SEED_ORDERS: Order[] = [
-  { id:"KB-2025-0001", date:"2025-05-10T09:23:00Z", customer:{name:"Sarah Johnson",email:"sarah.j@gmail.com",phone:"212-555-0192",address:"45 Maple Ave",city:"Albany",state:"NY",zip:"12201"}, items:[{productId:2,name:"Glossy Patent Leather Top Handle Bag",price:22.50,qty:1,image:"https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=200&q=80"},{productId:29,name:"Multi Pearl Beaded Bracelet Set",price:31.66,qty:2,image:"https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=200&q=80"}], total:85.82, status:"Delivered", tracking:"9400111899223197854392" },
-  { id:"KB-2025-0002", date:"2025-05-11T14:10:00Z", customer:{name:"Emily Rodriguez",email:"emily.r@outlook.com",phone:"518-555-0341",address:"112 Pine Street",city:"Troy",state:"NY",zip:"12180"}, items:[{productId:8,name:"Graffiti Print Faux Leather Crossbody Bag",price:33.96,qty:1,image:"https://images.unsplash.com/photo-1542838132-92c53300491e?w=200&q=80"}], total:33.96, status:"Shipped", tracking:"9400111899223197821044" },
-  { id:"KB-2025-0003", date:"2025-05-12T11:05:00Z", customer:{name:"Maria Chen",email:"mchen@yahoo.com",phone:"646-555-0874",address:"8 Park Blvd, Apt 3B",city:"New York",state:"NY",zip:"10001"}, items:[{productId:34,name:"Fragrance Mist Spray for Women",price:29.99,qty:1,image:"https://images.unsplash.com/photo-1594035910387-fea47794261f?w=200&q=80"},{productId:35,name:"Perfume and Lotion Gift Set for Women",price:49.00,qty:1,image:"https://images.unsplash.com/photo-1556228720-195a672e8a03?w=200&q=80"}], total:78.99, status:"Processing" },
-  { id:"KB-2025-0004", date:"2025-05-13T08:50:00Z", customer:{name:"Lisa Thompson",email:"l.thompson@gmail.com",phone:"914-555-0662",address:"33 Oak Lane",city:"Yonkers",state:"NY",zip:"10701"}, items:[{productId:15,name:"Rhinestone Crossbody Bag with Coin Purse",price:49.00,qty:1,image:"https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=200&q=80"},{productId:30,name:"Faux Straw Wide Brim Sun Hat",price:49.10,qty:1,image:"https://images.unsplash.com/photo-1529958030586-3aae4ca485ff?w=200&q=80"}], total:98.10, status:"Pending" },
-  { id:"KB-2025-0005", date:"2025-05-13T16:30:00Z", customer:{name:"Amanda Foster",email:"afoster@hotmail.com",phone:"315-555-0228",address:"71 Elm Drive",city:"Syracuse",state:"NY",zip:"13201"}, items:[{productId:56,name:"8' Beach Umbrella",price:42.89,qty:1,image:"https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=200&q=80"},{productId:54,name:"Outdoor Picnic Blanket / Beach Mat",price:42.42,qty:1,image:"https://images.unsplash.com/photo-1467810563316-b5476525c0f9?w=200&q=80"}], total:85.31, status:"Pending" },
-  { id:"KB-2025-0006", date:"2025-05-14T10:15:00Z", customer:{name:"Rachel Kim",email:"r.kim@gmail.com",phone:"917-555-0443",address:"220 West 42nd St, Apt 9A",city:"New York",state:"NY",zip:"10036"}, items:[{productId:19,name:"Tweed Plaid Tote Bag",price:69.35,qty:1,image:"https://images.unsplash.com/photo-1601924994987-69e26d50dc26?w=200&q=80"}], total:69.35, status:"Cancelled", notes:"Customer requested cancellation before shipment." },
-];
-
-const SEED_REVIEWS: Review[] = [
-  { id:"REV-001", date:"2025-05-08T10:12:00Z", productId:2, productName:"Glossy Patent Leather Top Handle Bag", author:"Sarah Johnson", email:"sarah.j@gmail.com", rating:5, title:"Absolutely love it!", body:"This bag is even more beautiful in person. The leather feels premium and the top handle is very sturdy. I've gotten so many compliments on it!", status:"Approved" },
-  { id:"REV-002", date:"2025-05-09T14:30:00Z", productId:8, productName:"Graffiti Print Faux Leather Crossbody Bag", author:"Emily Rodriguez", email:"emily.r@outlook.com", rating:5, title:"Super unique and great quality", body:"I was looking for something fun and different. This bag delivers! The print is vibrant and the material feels high quality. Shipping was fast too.", status:"Approved" },
-  { id:"REV-003", date:"2025-05-10T09:00:00Z", productId:29, productName:"Multi Pearl Beaded Bracelet Set", author:"Jennifer Adams", email:"j.adams@gmail.com", rating:4, title:"Pretty and elegant", body:"These bracelets look gorgeous and stack beautifully. The pearl size is perfect. Knocked off one star because the clasp on one is a little fiddly, but overall really happy.", status:"Approved" },
-  { id:"REV-004", date:"2025-05-11T16:45:00Z", productId:34, productName:"Fragrance Mist Spray for Women", author:"Maria Chen", email:"mchen@yahoo.com", rating:5, title:"Smells incredible", body:"I was not expecting such a beautiful scent for this price. Lasts all day and I keep getting compliments. Will definitely be ordering more.", status:"Approved" },
-  { id:"REV-005", date:"2025-05-12T11:20:00Z", productId:56, productName:"8' Beach Umbrella", author:"Tom Wilson", email:"t.wilson@gmail.com", rating:4, title:"Great shade, easy setup", body:"Very good umbrella. Sets up quickly and provides excellent shade. Took to the beach last weekend and it held up well in the wind. Loses one star for the carry bag being a bit flimsy.", status:"Pending" },
-  { id:"REV-006", date:"2025-05-12T15:00:00Z", productId:15, productName:"Rhinestone Crossbody Bag with Coin Purse", author:"Diana Prince", email:"d.prince@outlook.com", rating:5, title:"Stunning for evenings out", body:"Used this for a wedding and received so many compliments. The rhinestones sparkle beautifully and the matching coin purse is adorable. Feels very luxurious.", status:"Pending" },
-  { id:"REV-007", date:"2025-05-13T08:10:00Z", productId:4, productName:"Pleated Faux Leather Shoulder Bag", author:"Anonymous", email:"no-reply@test.com", rating:1, title:"Poor quality", body:"SPAM SPAM BUY NOW at other website!!!", status:"Pending" },
-  { id:"REV-008", date:"2025-05-13T12:30:00Z", productId:35, productName:"Perfume and Lotion Gift Set for Women", author:"Lisa Thompson", email:"l.thompson@gmail.com", rating:5, title:"Perfect gift set", body:"Bought this as a Mother's Day gift and my mom absolutely loved it. The packaging is beautiful and the lotion smells divine. Will definitely order again!", status:"Approved" },
-];
-
-// ── Storage ────────────────────────────────────────────────────────────────────
-function loadProd(): AdminData {
-  try { const r = localStorage.getItem(PROD_KEY); if (r) { const p=JSON.parse(r); return {...p, hidden: p.hidden||[]}; } } catch {}
-  return { overrides: {}, added: [], deleted: [], hidden: [] };
-}
-function saveProd(d: AdminData) { localStorage.setItem(PROD_KEY, JSON.stringify(d)); }
-
-function loadOrders(): Order[] {
-  try { const r = localStorage.getItem(ORDER_KEY); if (r) return JSON.parse(r); } catch {}
-  localStorage.setItem(ORDER_KEY, JSON.stringify(SEED_ORDERS)); return SEED_ORDERS;
-}
-function saveOrders(o: Order[]) { localStorage.setItem(ORDER_KEY, JSON.stringify(o)); }
-
-function loadReviews(): Review[] {
-  try { const r = localStorage.getItem(REV_KEY); if (r) return JSON.parse(r); } catch {}
-  localStorage.setItem(REV_KEY, JSON.stringify(SEED_REVIEWS)); return SEED_REVIEWS;
-}
-function saveReviews(r: Review[]) { localStorage.setItem(REV_KEY, JSON.stringify(r)); }
 
 function mergeAll(d: AdminData): Product[] {
   const base = staticProducts.filter(p => !d.deleted.includes(p.id)).map(p => ({ ...p, ...(d.overrides[p.id] ?? {}) }));
@@ -223,31 +156,19 @@ export default function AdminPanel() {
   useEffect(() => { if (sessionStorage.getItem("kb_auth")==="1") setAuthed(true); }, []);
   useEffect(() => {
     if (!authed) return;
-    const d = loadProd(); setProdData(d); setAllProducts(mergeAll(d));
-    setOrders(loadOrders()); setReviews(loadReviews());
-    // Load custom categories and meta
+
+    // ── Firestore real-time listeners ──────────────────────────────────────
+    const unsubAdmin = onAdminDataChange(d => {
+      setProdData(d);
+      setAllProducts(mergeAll(d));
+    });
+
+    const unsubOrders = onOrdersChange(os => setOrders(os));
+    const unsubReviews = onReviewsChange(rs => setReviews(rs));
+
+    // ── Promos (still localStorage, migrated later) ─────────────────────
     try {
-      const rawCats = localStorage.getItem(CAT_KEY);
-      const rawMeta = localStorage.getItem("kb_category_meta");
-      const staticCats = categories.filter(c => c !== "All");
-      
-      if (rawMeta) setCategoryMeta(JSON.parse(rawMeta));
-      
-      if (rawCats) {
-        const parsed: string[] = JSON.parse(rawCats);
-        // Always ensure all static cats are present (migration for existing users)
-        const missingSatic = staticCats.filter(sc => !parsed.includes(sc));
-        const merged = missingSatic.length > 0 ? [...missingSatic, ...parsed] : parsed;
-        if (missingSatic.length > 0) localStorage.setItem(CAT_KEY, JSON.stringify(merged));
-        setCustomCategories(merged);
-      } else {
-        setCustomCategories(staticCats);
-        localStorage.setItem(CAT_KEY, JSON.stringify(staticCats));
-      }
-    } catch {}
-    // Load promos
-    try {
-      const raw = localStorage.getItem(PROMO_KEY);
+      const raw = localStorage.getItem("kb_promos");
       if (raw) setPromos(JSON.parse(raw));
       else {
         const seed: PromoCode[] = [
@@ -257,9 +178,29 @@ export default function AdminPanel() {
           { id:"p4", code:"KBVIP",     description:"20% VIP discount",  type:"percent", value:20, active:true },
           { id:"p5", code:"SUMMER",    description:"12% Summer sale",   type:"percent", value:12, active:true },
         ];
-        setPromos(seed); localStorage.setItem(PROMO_KEY, JSON.stringify(seed));
+        setPromos(seed); localStorage.setItem("kb_promos", JSON.stringify(seed));
       }
     } catch {}
+
+    // ── Categories (still localStorage) ────────────────────────────────
+    try {
+      const rawCats = localStorage.getItem(CAT_KEY);
+      const rawMeta = localStorage.getItem("kb_category_meta");
+      const staticCats = categories.filter(c => c !== "All");
+      if (rawMeta) setCategoryMeta(JSON.parse(rawMeta));
+      if (rawCats) {
+        const parsed: string[] = JSON.parse(rawCats);
+        const missingSatic = staticCats.filter(sc => !parsed.includes(sc));
+        const merged = missingSatic.length > 0 ? [...missingSatic, ...parsed] : parsed;
+        if (missingSatic.length > 0) localStorage.setItem(CAT_KEY, JSON.stringify(merged));
+        setCustomCategories(merged);
+      } else {
+        setCustomCategories(staticCats);
+        localStorage.setItem(CAT_KEY, JSON.stringify(staticCats));
+      }
+    } catch {}
+
+    return () => { unsubAdmin(); unsubOrders(); unsubReviews(); };
   }, [authed]);
 
   const savePromos = (list: PromoCode[]) => { setPromos(list); localStorage.setItem(PROMO_KEY, JSON.stringify(list)); };
@@ -390,7 +331,7 @@ export default function AdminPanel() {
   const login = () => { if (pw===PASSWORD){ sessionStorage.setItem("kb_auth","1"); setAuthed(true); } else setPwError(true); };
 
   // Product helpers
-  const updateProd = (d: AdminData) => { setProdData(d); saveProd(d); setAllProducts(mergeAll(d)); };
+  const updateProd = (d: AdminData) => { setProdData(d); saveAdminDataFS(d); setAllProducts(mergeAll(d)); };
   const openAdd  = () => { setEditing(null); setForm(BLANK); setImgMode("url"); setExtraImgUrl(""); setPage("add"); };
   const openEdit = (p: Product) => { setEditing(p); setForm({...p, images: p.images ?? []}); setImgMode("url"); setExtraImgUrl(""); setPage("add"); };
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -440,35 +381,33 @@ export default function AdminPanel() {
   };
 
   // Order helpers
-  const updateOrders = (o: Order[]) => { setOrders(o); saveOrders(o); };
-  const setOrderStatus = (id: string, status: OrderStatus) => {
-    updateOrders(orders.map(o=>o.id===id?{...o,status}:o));
+  const setOrderStatus = async (id: string, status: OrderStatus) => {
+    await updateOrderFS(id, { status });
     if (selOrder?.id===id) setSelOrder(p=>p?{...p,status}:null);
     showToast(`Order ${id} → ${status}`);
   };
-  const saveOrderDetails = () => {
+  const saveOrderDetails = async () => {
     if (!selOrder) return;
-    updateOrders(orders.map(o=>o.id===selOrder.id?{...o,tracking:trackingInput||undefined,notes:notesInput||undefined}:o));
+    await updateOrderFS(selOrder.id, { tracking: trackingInput||undefined, notes: notesInput||undefined });
     setSelOrder(p=>p?{...p,tracking:trackingInput||undefined,notes:notesInput||undefined}:null);
     showToast("Order updated.");
   };
   const openOrder = (o: Order) => { setSelOrder(o); setTrackingInput(o.tracking??""); setNotesInput(o.notes??""); setPage("order-detail"); };
 
   // Review helpers
-  const updateReviews = (r: Review[]) => { setReviews(r); saveReviews(r); };
-  const setRevStatus = (id: string, status: ReviewStatus) => {
-    updateReviews(reviews.map(r=>r.id===id?{...r,status}:r));
+  const setRevStatus = async (id: string, status: ReviewStatus) => {
+    await updateReviewFS(id, { status });
     if (selReview?.id===id) setSelReview(p=>p?{...p,status}:null);
     showToast(`Review ${status.toLowerCase()}.`);
   };
-  const saveReply = () => {
+  const saveReply = async () => {
     if (!selReview) return;
-    updateReviews(reviews.map(r=>r.id===selReview.id?{...r,reply:replyInput||undefined}:r));
+    await updateReviewFS(selReview.id, { reply: replyInput||undefined });
     setSelReview(p=>p?{...p,reply:replyInput||undefined}:null);
     showToast("Reply saved.");
   };
-  const deleteReview = (id: string) => {
-    updateReviews(reviews.filter(r=>r.id!==id));
+  const deleteReview = async (id: string) => {
+    await deleteReviewFS(id);
     if (selReview?.id===id){ setSelReview(null); setPage("reviews"); }
     showToast("Review deleted.");
   };
@@ -992,7 +931,7 @@ export default function AdminPanel() {
                 newData.overrides = { ...newData.overrides, [id]: { ...(newData.overrides[id] || {}), quantity: newQty } };
               }
               setProdData(newData);
-              saveProd(newData);
+              saveAdminDataFS(newData);
               setAllProducts(mergeAll(newData));
               showToast("Stock updated.");
             };

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
+import { saveOrderFS } from "@/lib/firestore";
 
 interface FormData {
   name: string; email: string; phone: string;
@@ -112,17 +113,16 @@ export default function CheckoutPage() {
         throw new Error(data.error || "Could not create checkout session");
       }
 
-      // Save order draft to localStorage before redirect
+      // Save order to Firestore
       try {
         const order = {
           id: orderId, date: new Date().toISOString(),
           customer: { name: form.name, email: form.email, phone: form.phone, address: form.address, city: form.city, state: form.state, zip: form.zip },
           items: items.map(i => ({ productId: i.id, name: i.name, price: i.price, qty: i.quantity, image: i.image })),
-          total: finalTotal, status: "Pending", tracking: "",
+          total: finalTotal, status: "Pending" as const, tracking: "",
           notes: [form.notes, promoApplied ? `Promo: ${promoInput.toUpperCase()}` : ""].filter(Boolean).join(" | "),
         };
-        const existing = JSON.parse(localStorage.getItem("kb_orders") || "[]");
-        localStorage.setItem("kb_orders", JSON.stringify([order, ...existing]));
+        await saveOrderFS(order);
       } catch { /* ignore */ }
 
       window.location.href = data.url;

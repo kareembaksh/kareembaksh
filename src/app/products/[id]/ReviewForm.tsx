@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useProductReviews } from "@/hooks/useAdminProducts";
+import { addReviewFS } from "@/lib/firestore";
 
 interface Props {
   productId: number;
@@ -27,13 +28,12 @@ export default function ReviewForm({ productId, productName }: Props) {
     return e;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     const review = {
-      id: `rv-${Date.now()}`,
       date: new Date().toISOString(),
       productId,
       productName,
@@ -42,14 +42,13 @@ export default function ReviewForm({ productId, productName }: Props) {
       rating,
       title: form.title,
       body: form.body,
-      status: "Pending",
+      status: "Pending" as const,
       reply: "",
     };
 
     try {
-      const existing = JSON.parse(localStorage.getItem("kb_reviews") || "[]");
-      localStorage.setItem("kb_reviews", JSON.stringify([review, ...existing]));
-    } catch { /* localStorage unavailable */ }
+      await addReviewFS(review);
+    } catch { /* error handling */ }
 
     setSubmitted(true);
   }
