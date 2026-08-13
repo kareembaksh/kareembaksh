@@ -9,6 +9,14 @@ import {
   loadReviewsFS, addReviewFS, updateReviewFS, deleteReviewFS, onReviewsChange,
   loadPromosFS, savePromoFS, deletePromoFS, type PromoCode,
 } from "@/lib/firestore";
+import { auth } from "@/lib/firebase";
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  type User,
+} from "firebase/auth";
 
 const PASSWORD  = "KBadmin2025";
 const PROMO_KEY = "kb_promos";
@@ -79,8 +87,13 @@ const Stars = ({ n }: { n: number }) => <span className="text-amber-400 text-sm"
 type Page = "dashboard"|"products"|"add"|"orders"|"order-detail"|"reviews"|"settings"|"stock";
 
 export default function AdminPanel() {
-  const [authed, setAuthed] = useState(false);
-  const [pw, setPw] = useState(""); const [pwError, setPwError] = useState(false);
+  const [authed, setAuthed]     = useState(false);
+  const [user, setUser]         = useState<User | null>(null);
+  const [email, setEmail]       = useState("");
+  const [pw, setPw]             = useState("");
+  const [authError, setAuthError] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [authLoading, setAuthLoading]     = useState(true);
 
   // Products
   const [prodData, setProdData]       = useState<AdminData>({ overrides:{}, added:[], deleted:[], hidden:[] });
@@ -203,6 +216,7 @@ export default function AdminPanel() {
     return () => { unsubAdmin(); unsubOrders(); unsubReviews(); };
   }, [authed]);
 
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
   const savePromos = (list: PromoCode[]) => { setPromos(list); localStorage.setItem(PROMO_KEY, JSON.stringify(list)); };
   const saveCustomCats = (list: string[], metaObj: Record<string, {image:string, desc:string, media?:string[]}> = categoryMeta) => {
     setCustomCategories(list);
@@ -327,8 +341,52 @@ export default function AdminPanel() {
     return "Active";
   };
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
-  const login = () => { if (pw===PASSWORD){ sessionStorage.setItem("kb_auth","1"); setAuthed(true); } else setPwError(true); };
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+        setAuthed(true);
+      } else {
+        setUser(null);
+        setAuthed(false);
+      }
+      setAuthLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleAuth = async () => {
+    setAuthError("");
+    if (!email.trim() || !pw.trim()) {
+      setAuthError("Email and password are required.");
+      return;
+    }
+
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email.trim(), pw.trim());
+        showToast("Admin account created & signed in!");
+      } else {
+        await signInWithEmailAndPassword(auth, email.trim(), pw.trim());
+        showToast("Signed in successfully!");
+      }
+    } catch (err: any) {
+      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
+        setAuthError("Invalid email or password.");
+      } else if (err.code === "auth/email-already-in-use") {
+        setAuthError("An account with this email already exists.");
+      } else if (err.code === "auth/weak-password") {
+        setAuthError("Password should be at least 6 characters.");
+      } else {
+        setAuthError(err.message || "Authentication failed.");
+      }
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    showToast("Signed out.");
+  };
 
   // Product helpers
   const updateProd = (d: AdminData) => { setProdData(d); saveAdminDataFS(d); setAllProducts(mergeAll(d)); };
@@ -465,23 +523,84 @@ export default function AdminPanel() {
   );
 
   // ── LOGIN ──────────────────────────────────────────────────────────────────
+  if (authLoading) return (
+    <div className="fixed inset-0 z-[100] bg-zinc-900 flex items-center justify-center">
+      <div className="text-center text-white space-y-3">
+        <svg className="w-10 h-10 animate-spin text-rose-500 mx-auto" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p className="text-sm font-medium text-zinc-400">Verifying session...</p>
+      </div>
+    </div>
+  );
+
   if (!authed) return (
     <div className="fixed inset-0 z-[100] bg-zinc-900 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl">
-        <div className="flex items-center gap-3 mb-8">
+        <div className="flex items-center gap-3 mb-6">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="w-11 h-11 flex-shrink-0">
             <rect width="32" height="32" rx="7" fill="#f43f5e"/><rect x="16" width="16" height="32" fill="#18181b"/>
             <text x="2" y="23" fontFamily="Arial Black, Arial, sans-serif" fontSize="15" fontWeight="900" fill="white">K</text>
             <text x="17" y="23" fontFamily="Arial Black, Arial, sans-serif" fontSize="15" fontWeight="900" fill="white">B</text>
           </svg>
-          <div><p className="font-bold text-zinc-900 text-lg leading-tight">KB Admin Panel</p><p className="text-xs text-zinc-400">Kareem Baksh Store</p></div>
+          <div>
+            <p className="font-bold text-zinc-900 text-lg leading-tight">KB Admin Panel</p>
+            <p className="text-xs text-zinc-400">Firebase Authenticated</p>
+          </div>
         </div>
-        <p className="text-sm font-medium text-zinc-700 mb-2">Admin Password</p>
-        <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setPwError(false);}} onKeyDown={e=>e.key==="Enter"&&login()} placeholder="Enter password"
-          className={`w-full border rounded-xl px-4 py-3 text-sm mb-1 focus:outline-none focus:ring-2 ${pwError?"border-red-400 focus:ring-red-300":"border-zinc-300 focus:ring-rose-400"}`}/>
-        {pwError&&<p className="text-red-500 text-xs mb-3">Incorrect password.</p>}
-        {!pwError&&<div className="mb-3"/>}
-        <button onClick={login} className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-xl transition-colors">Sign In</button>
+
+        <h3 className="font-bold text-zinc-800 text-base mb-4">
+          {isRegistering ? "Create Admin Account" : "Sign In to Dashboard"}
+        </h3>
+
+        <div className="space-y-3.5 mb-4">
+          <div>
+            <label className="block text-xs font-semibold text-zinc-600 mb-1">Admin Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => { setEmail(e.target.value); setAuthError(""); }}
+              onKeyDown={e => e.key === "Enter" && handleAuth()}
+              placeholder="admin@kareembaksh.com"
+              className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-zinc-600 mb-1">Password</label>
+            <input
+              type="password"
+              value={pw}
+              onChange={e => { setPw(e.target.value); setAuthError(""); }}
+              onKeyDown={e => e.key === "Enter" && handleAuth()}
+              placeholder="••••••••"
+              className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"
+            />
+          </div>
+        </div>
+
+        {authError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+            <p className="text-xs font-medium text-red-600 leading-snug">{authError}</p>
+          </div>
+        )}
+
+        <button
+          onClick={handleAuth}
+          className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-xl transition-colors text-sm shadow-md shadow-rose-200"
+        >
+          {isRegistering ? "Create & Sign In" : "Sign In"}
+        </button>
+
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); }}
+            className="text-xs text-rose-500 font-semibold hover:underline"
+          >
+            {isRegistering ? "Already have an admin account? Sign In" : "First time? Create Admin Account"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -494,8 +613,9 @@ export default function AdminPanel() {
       <header className="bg-zinc-900 text-white px-6 py-3 flex items-center justify-between z-30">
         <div className="flex items-center gap-3"><KBIcon/><span className="font-bold text-base">KB Admin Panel</span></div>
         <div className="flex items-center gap-5 text-sm">
+          <span className="text-xs text-zinc-400 font-mono hidden sm:inline">{user?.email}</span>
           <a href="/" target="_blank" className="text-zinc-400 hover:text-white transition-colors">View Store ↗</a>
-          <button onClick={()=>{sessionStorage.removeItem("kb_auth");setAuthed(false);}} className="text-zinc-400 hover:text-white transition-colors">Sign Out</button>
+          <button onClick={handleLogout} className="text-zinc-400 hover:text-white transition-colors">Sign Out</button>
         </div>
       </header>
 
