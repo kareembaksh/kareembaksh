@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/authContext";
 
@@ -38,7 +38,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await createUserWithEmailAndPassword(getFirebaseAuth(), email.trim(), password);
       router.push("/");
     } catch (err: any) {
       if (err.code === "auth/email-already-in-use") {

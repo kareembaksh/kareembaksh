@@ -13,7 +13,7 @@ import {
   onHeroSlidesChange, saveHeroSlideFS, deleteHeroSlideFS,
 } from "@/lib/firestore";
 import { DEFAULT_HERO_SLIDES } from "@/components/HeroSlider";
-import { auth } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 import {
   signInWithEmailAndPassword,
   signOut,
@@ -386,7 +386,7 @@ export default function AdminPanel() {
   };
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const unsub = onAuthStateChanged(getFirebaseAuth(), async (u) => {
       if (u) {
         // Fetch latest whitelist from Firestore at login time
         const admins = await loadAllowedAdminsFS();
@@ -395,7 +395,7 @@ export default function AdminPanel() {
           setUser(u);
           setAuthed(true);
         } else {
-          await signOut(auth);
+          await signOut(getFirebaseAuth());
           setUser(null);
           setAuthed(false);
           setAuthError("Unauthorized: You do not have admin privileges.");
@@ -417,7 +417,7 @@ export default function AdminPanel() {
     }
     try {
       const { sendPasswordResetEmail } = await import("firebase/auth");
-      await sendPasswordResetEmail(auth, email.trim());
+      await sendPasswordResetEmail(getFirebaseAuth(), email.trim());
       showToast("Password reset email sent! Check your inbox.");
     } catch (err: any) {
       setAuthError(err.message || "Failed to send reset email.");
@@ -438,10 +438,10 @@ export default function AdminPanel() {
         return;
       }
       if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, email.trim(), pw.trim());
+        await createUserWithEmailAndPassword(getFirebaseAuth(), email.trim(), pw.trim());
         showToast("Admin account created & signed in!");
       } else {
-        await signInWithEmailAndPassword(auth, email.trim(), pw.trim());
+        await signInWithEmailAndPassword(getFirebaseAuth(), email.trim(), pw.trim());
         showToast("Signed in successfully!");
       }
     } catch (err: any) {
@@ -458,7 +458,7 @@ export default function AdminPanel() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut(getFirebaseAuth());
     showToast("Signed out.");
   };
 

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User, signOut as firebaseSignOut } from "firebase/auth";
-import { auth } from "./firebase";
+import { getFirebaseAuth } from "./firebase";
 import { useRouter } from "next/navigation";
 
 interface AuthContextType {
@@ -19,7 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (currentUser) => {
       // If an admin logs in on the storefront, log them out immediately to keep roles separated?
       // Actually, admin can be a customer too, but for strict separation:
       if (currentUser?.email === (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@kareembaksh.com") && !window.location.pathname.startsWith("/kbpanel")) {
@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = async () => {
-    await firebaseSignOut(auth);
+    await firebaseSignOut(getFirebaseAuth());
     router.push("/login");
   };
 
