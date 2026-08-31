@@ -8,12 +8,23 @@ import { useCart } from "@/components/CartProvider";
 function SuccessContent() {
   const searchParams = useSearchParams();
   const sessionId    = searchParams.get("session_id");
-  const { clearCart } = useCart();
+  const { clearCart, removeItems } = useCart();
   const [cleared, setCleared] = useState(false);
 
   useEffect(() => {
-    if (!cleared) { clearCart(); setCleared(true); }
-  }, [clearCart, cleared]);
+    if (cleared) return;
+    setCleared(true);
+    // Remove only the items that were part of this checkout (fallback: clear everything)
+    try {
+      const raw = sessionStorage.getItem("kb_checkout_items");
+      if (raw) {
+        const ids = JSON.parse(raw) as number[];
+        sessionStorage.removeItem("kb_checkout_items");
+        if (Array.isArray(ids) && ids.length > 0) { removeItems(ids); return; }
+      }
+    } catch {}
+    clearCart();
+  }, [clearCart, removeItems, cleared]);
 
   const orderId = sessionId ? `KB-${sessionId.slice(-8).toUpperCase()}` : "KB-ORDER";
 

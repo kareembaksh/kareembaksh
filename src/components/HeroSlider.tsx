@@ -3,65 +3,44 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { onHeroSlidesChange } from "@/lib/firestore";
+import type { HeroSlide } from "@/lib/types";
 
-const slides = [
-  {
-    id: 1,
-    badge: "New Collection",
-    title: "Premium Women's",
-    highlight: "Bags & Purses",
-    desc: "From evening clutches to everyday crossbody bags — 28 styles to match every mood and occasion.",
-    cta: { label: "Shop Bags", href: "/products?category=Women%27s+Bags" },
-    secondary: { label: "View All", href: "/products" },
-    image: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=800&q=80",
-    bg: "from-rose-50 via-white to-pink-50",
-  },
-  {
-    id: 2,
-    badge: "Home Essentials",
-    title: "Everything You Need",
-    highlight: "For Your Home",
-    desc: "Premium bedding, bath towels, kitchen supplies, and storage — quality you can feel every day.",
-    cta: { label: "Shop Home", href: "/products?category=Home+%26+Living" },
-    secondary: { label: "Kitchen & Dining", href: "/products?category=Kitchen+%26+Dining" },
-    image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80",
-    bg: "from-blue-50 via-white to-indigo-50",
-  },
-  {
-    id: 3,
-    badge: "Beauty & Style",
-    title: "Fragrance, Hats",
-    highlight: "& Accessories",
-    desc: "Discover perfume gift sets, sun hats, pearl bracelets, and more to complete your look.",
-    cta: { label: "Shop Beauty", href: "/products?category=Beauty+%26+Fragrance" },
-    secondary: { label: "Accessories", href: "/products?category=Accessories" },
-    image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=800&q=80",
-    bg: "from-amber-50 via-white to-orange-50",
-  },
-  {
-    id: 4,
-    badge: "Outdoors & Sports",
-    title: "Beach, Camping",
-    highlight: "& Beyond",
-    desc: "Beach chairs, umbrellas, picnic blankets, and golf gear — everything for your outdoor adventures.",
-    cta: { label: "Shop Outdoors", href: "/products?category=Outdoors+%26+Sports" },
-    secondary: { label: "View All", href: "/products" },
-    image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80",
-    bg: "from-green-50 via-white to-teal-50",
-  },
+// Built-in fallback slides - shown when the kb_heroslides collection is empty
+// (or while it loads). Manage real slides from KB Panel > Settings > Hero Slider.
+export const DEFAULT_HERO_SLIDES: HeroSlide[] = [
+  { id: 1, badge: "New Collection", title: "Premium Women's", highlight: "Bags & Purses", desc: "From evening clutches to everyday crossbody bags - 28 styles to match every mood and occasion.", cta: { label: "Shop Bags", href: "/products?category=Women%27s+Bags" }, secondary: { label: "View All", href: "/products" }, image: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=800&q=80", bg: "from-rose-50 via-white to-pink-50", active: true },
+  { id: 2, badge: "Home Essentials", title: "Everything You Need", highlight: "For Your Home", desc: "Premium bedding, bath towels, kitchen supplies, and storage - quality you can feel every day.", cta: { label: "Shop Home", href: "/products?category=Home+%26+Living" }, secondary: { label: "Kitchen & Dining", href: "/products?category=Kitchen+%26+Dining" }, image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80", bg: "from-blue-50 via-white to-indigo-50", active: true },
+  { id: 3, badge: "Beauty & Style", title: "Fragrance, Hats", highlight: "& Accessories", desc: "Discover perfume gift sets, sun hats, pearl bracelets, and more to complete your look.", cta: { label: "Shop Beauty", href: "/products?category=Beauty+%26+Fragrance" }, secondary: { label: "Accessories", href: "/products?category=Accessories" }, image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=800&q=80", bg: "from-amber-50 via-white to-orange-50", active: true },
+  { id: 4, badge: "Outdoors & Sports", title: "Beach, Camping", highlight: "& Beyond", desc: "Beach chairs, umbrellas, picnic blankets, and golf gear - everything for your outdoor adventures.", cta: { label: "Shop Outdoors", href: "/products?category=Outdoors+%26+Sports" }, secondary: { label: "View All", href: "/products" }, image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80", bg: "from-green-50 via-white to-teal-50", active: true },
 ];
 
 export default function HeroSlider() {
-  const [current, setCurrent] = useState(0);
+  const [dbSlides, setDbSlides]   = useState<HeroSlide[] | null>(null);
+  const [current, setCurrent]     = useState(0);
   const [animating, setAnimating] = useState(false);
 
+  // Real-time slides from Firestore (active only); fall back to defaults when empty
   useEffect(() => {
-    const timer = setInterval(() => goTo((current + 1) % slides.length), 5000);
+    const unsub = onHeroSlidesChange((slides) => setDbSlides(slides.filter(s => s.active !== false)));
+    return () => unsub();
+  }, []);
+
+  const slides = dbSlides && dbSlides.length > 0 ? dbSlides : DEFAULT_HERO_SLIDES;
+  const safeCurrent = Math.min(current, slides.length - 1);
+
+  // Reset index if the slide list shrinks
+  useEffect(() => {
+    if (current >= slides.length) setCurrent(0);
+  }, [slides.length, current]);
+
+  useEffect(() => {
+    const timer = setInterval(() => goTo((safeCurrent + 1) % slides.length), 5000);
     return () => clearInterval(timer);
-  }, [current]);
+  }, [safeCurrent, slides.length]);
 
   function goTo(idx: number) {
-    if (animating || idx === current) return;
+    if (animating || idx === safeCurrent) return;
     setAnimating(true);
     setTimeout(() => {
       setCurrent(idx);
@@ -69,10 +48,10 @@ export default function HeroSlider() {
     }, 300);
   }
 
-  const slide = slides[current];
+  const slide = slides[safeCurrent] ?? DEFAULT_HERO_SLIDES[0];
 
   return (
-    <section className={`relative bg-gradient-to-br ${slide.bg} overflow-hidden transition-all duration-700`}>
+    <section className={`relative bg-gradient-to-br ${slide.bg || "from-rose-50 via-white to-pink-50"} overflow-hidden transition-all duration-700`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
 
@@ -98,12 +77,14 @@ export default function HeroSlider() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>
               </Link>
-              <Link
-                href={slide.secondary.href}
-                className="inline-flex items-center gap-2 bg-white hover:bg-zinc-50 text-zinc-900 font-semibold px-8 py-3.5 rounded-full border border-zinc-200 transition-colors"
-              >
-                {slide.secondary.label}
-              </Link>
+              {slide.secondary && (
+                <Link
+                  href={slide.secondary.href}
+                  className="inline-flex items-center gap-2 bg-white hover:bg-zinc-50 text-zinc-900 font-semibold px-8 py-3.5 rounded-full border border-zinc-200 transition-colors"
+                >
+                  {slide.secondary.label}
+                </Link>
+              )}
             </div>
 
             {/* Dots */}
@@ -113,7 +94,7 @@ export default function HeroSlider() {
                   key={i}
                   onClick={() => goTo(i)}
                   className={`h-2 rounded-full transition-all duration-300 ${
-                    i === current ? "w-8 bg-rose-500" : "w-2 bg-zinc-300 hover:bg-zinc-400"
+                    i === safeCurrent ? "w-8 bg-rose-500" : "w-2 bg-zinc-300 hover:bg-zinc-400"
                   }`}
                 />
               ))}
@@ -138,7 +119,7 @@ export default function HeroSlider() {
             </div>
             {/* Prev / Next arrows */}
             <button
-              onClick={() => goTo((current - 1 + slides.length) % slides.length)}
+              onClick={() => goTo((safeCurrent - 1 + slides.length) % slides.length)}
               className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 hover:bg-white rounded-full shadow flex items-center justify-center transition-colors"
             >
               <svg className="w-5 h-5 text-zinc-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -146,7 +127,7 @@ export default function HeroSlider() {
               </svg>
             </button>
             <button
-              onClick={() => goTo((current + 1) % slides.length)}
+              onClick={() => goTo((safeCurrent + 1) % slides.length)}
               className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 hover:bg-white rounded-full shadow flex items-center justify-center transition-colors"
             >
               <svg className="w-5 h-5 text-zinc-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -166,15 +147,6 @@ export default function HeroSlider() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Progress bar */}
-      <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-100">
-        <div
-          key={current}
-          className="h-full bg-rose-400 animate-progress"
-          style={{ animationDuration: "5s" }}
-        />
       </div>
     </section>
   );

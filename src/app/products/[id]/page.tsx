@@ -1,16 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import ProductImages from "./ProductImages";
-import { getProductById, products } from "@/lib/products";
 import ProductCard from "@/components/ProductCard";
 import AddToCartSection from "./AddToCartSection";
 import ReviewForm from "./ReviewForm";
-import ProductVisibilityGuard from "./ProductVisibilityGuard";
-import AdminProductPage from "./AdminProductPage";
+import ImageGallery from "./ImageGallery";
+import { getProductByIdServer, getProductsServer } from "@/lib/serverProducts";
+import { notFound } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const product = getProductById(Number(id));
+  const product = await getProductByIdServer(Number(id));
   if (!product) return { title: "Product | Kareem Baksh Store" };
 
   return {
@@ -34,14 +35,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const productId = Number(id);
-  const product = getProductById(productId);
 
-  // Admin-added product (not in static list) — render client-side from localStorage
-  if (!product) {
-    return <AdminProductPage productId={productId} />;
-  }
+  const [product, allProducts] = await Promise.all([
+    getProductByIdServer(productId),
+    getProductsServer(),
+  ]);
 
-  const related = products
+  if (!product) return notFound();
+
+  const related = allProducts
     .filter((p) => p.category === product.category && p.id !== product.id)
     .slice(0, 4);
 
@@ -50,8 +52,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
     : null;
 
   return (
-    <ProductVisibilityGuard productId={product.id}>
-      <main>
+    <main>
       {/* Breadcrumb */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <nav className="flex items-center gap-2 text-sm text-zinc-400">
@@ -68,12 +69,12 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
       </div>
 
       {/* Product detail */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid lg:grid-cols-2 gap-12">
-          {/* Image / Gallery — reads localStorage overrides client-side */}
-          <ProductImages product={product} />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16">
+          {/* Images */}
+          <ImageGallery images={product.images ?? [product.image]} name={product.name} badge={product.badge} />
 
-          {/* Info */}
+          {/* Product Info */}
           <div className="flex flex-col">
             <p className="text-sm font-semibold text-rose-500 uppercase tracking-wider mb-2">
               {product.category}
@@ -161,7 +162,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             <ReviewForm productId={product.id} productName={product.name} />
           </div>
         </div>
-      </section>
+      </div>
 
       {/* Related products */}
       {related.length > 0 && (
@@ -177,6 +178,5 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         </section>
       )}
     </main>
-    </ProductVisibilityGuard>
   );
 }

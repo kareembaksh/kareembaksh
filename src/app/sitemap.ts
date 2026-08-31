@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
-import { products } from "@/lib/products";
+import { getProductsServer, getCategoriesServer } from "@/lib/serverProducts";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = "https://www.kareembaksh.com";
 
   const staticRoutes: MetadataRoute.Sitemap = [
@@ -15,12 +15,24 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/track-order`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 },
   ];
 
-  const productRoutes: MetadataRoute.Sitemap = products.map(p => ({
+  const products = await getProductsServer();
+  const allCategories = await getCategoriesServer();
+
+  const productEntries: MetadataRoute.Sitemap = products.map((p) => ({
     url: `${base}/products/${p.id}`,
     lastModified: new Date(),
     changeFrequency: "weekly",
     priority: 0.8,
   }));
 
-  return [...staticRoutes, ...productRoutes];
+  const categoryEntries: MetadataRoute.Sitemap = allCategories
+    .filter((c) => c !== "All")
+    .map((c) => ({
+      url: `${base}/products?category=${encodeURIComponent(c)}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    }));
+
+  return [...staticRoutes, ...productEntries, ...categoryEntries];
 }

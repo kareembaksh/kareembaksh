@@ -22,14 +22,47 @@ import {
   Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Product, Review, ReviewStatus } from "./types";
+import type { Product, Review, ReviewStatus, CartItem, HeroSlide } from "./types";
 
 // ─── Collection names ───────────────────────────────────────────────────────
-const ADMIN_COL   = "kb_admin_data";
-const ORDERS_COL  = "kb_orders";
-const REVIEWS_COL = "kb_reviews";
-const PROMOS_COL  = "kb_promos";
-const CATS_COL    = "kb_categories";
+const ADMIN_COL    = "kb_admin_data";
+const ORDERS_COL   = "kb_orders";
+const REVIEWS_COL  = "kb_reviews";
+const PROMOS_COL   = "kb_promos";
+const CATS_COL     = "kb_categories";
+const PRODUCTS_COL = "kb_products";
+const CARTS_COL    = "kb_carts";
+const NEWSLETTER_COL = "kb_subscribers";
+const ADMINS_COL   = "kb_admins";
+const HERO_COL     = "kb_heroslides";
+
+// ─── Carts (kb_carts collection) ──────────────────────────────────────────────
+
+export async function loadCartFS(userId: string): Promise<CartItem[]> {
+  const snap = await getDoc(doc(db, CARTS_COL, userId));
+  if (snap.exists()) {
+    return snap.data().items as CartItem[];
+  }
+  return [];
+}
+
+export async function saveCartFS(userId: string, items: CartItem[]): Promise<void> {
+  await setDoc(doc(db, CARTS_COL, userId), { items });
+}
+
+// ─── Products (kb_products collection) ────────────────────────────────────────
+export async function loadProductsFS(): Promise<Product[]> {
+  const snap = await getDocs(collection(db, PRODUCTS_COL));
+  return snap.docs.map(d => ({ ...d.data(), id: Number(d.id) } as Product));
+}
+
+export async function saveProductFS(product: Product): Promise<void> {
+  await setDoc(doc(db, PRODUCTS_COL, String(product.id)), product);
+}
+
+export async function deleteProductFS(id: number): Promise<void> {
+  await deleteDoc(doc(db, PRODUCTS_COL, String(id)));
+}
 
 // ─── Admin product data ─────────────────────────────────────────────────────
 export interface AdminData {
@@ -65,6 +98,24 @@ export function onAdminDataChange(cb: (d: AdminData) => void): Unsubscribe {
       cb({ overrides: {}, added: [], deleted: [], hidden: [] });
     }
   });
+}
+
+// ─── Categories ─────────────────────────────────────────────────────────────
+export interface CategoryState {
+  list: string[];
+  meta: Record<string, { image: string; desc: string; media?: string[] }>;
+}
+
+export async function loadCategoriesFS(): Promise<CategoryState> {
+  const snap = await getDoc(doc(db, CATS_COL, "state"));
+  if (snap.exists()) {
+    return snap.data() as CategoryState;
+  }
+  return { list: [], meta: {} };
+}
+
+export async function saveCategoriesFS(state: CategoryState): Promise<void> {
+  await setDoc(doc(db, CATS_COL, "state"), state);
 }
 
 // ─── Orders ─────────────────────────────────────────────────────────────────
@@ -154,24 +205,62 @@ export async function deletePromoFS(id: string): Promise<void> {
   await deleteDoc(doc(db, PROMOS_COL, id));
 }
 
-// ─── Categories ──────────────────────────────────────────────────────────────
-export interface CategoryMeta { image: string; desc: string; media?: string[]; }
 
-export async function loadCategoriesFS(): Promise<{ list: string[]; meta: Record<string,CategoryMeta> }> {
-  const snap = await getDocs(collection(db, CATS_COL));
-  const list: string[] = [];
-  const meta: Record<string,CategoryMeta> = {};
-  snap.docs.forEach(d => {
-    list.push(d.id);
-    meta[d.id] = d.data() as CategoryMeta;
+
+// --- Hero Slides (kb_heroslides collection) ----------------------------------
+export async function loadHeroSlidesFS(): Promise<HeroSlide[]> {
+  const snap = await getDocs(collection(db, HERO_COL));
+  return snap.docs
+    .map(d => ({ ...(d.data() as HeroSlide), id: Number(d.id) }))
+    .sort((a, b) => a.id - b.id);
+}
+
+export async function saveHeroSlideFS(slide: HeroSlide): Promise<void> {
+  await setDoc(doc(db, HERO_COL, String(slide.id)), slide);
+}
+
+export async function deleteHeroSlideFS(id: number): Promise<void> {
+  await deleteDoc(doc(db, HERO_COL, String(id)));
+}
+
+/** Real-time listener - calls cb whenever hero slides change */
+export function onHeroSlidesChange(cb: (slides: HeroSlide[]) => void): Unsubscribe {
+  return onSnapshot(
+    collection(db, HERO_COL),
+    (snap) => {
+      const slides = snap.docs
+        .map(d => ({ ...(d.data() as HeroSlide), id: Number(d.id) }))
+        .sort((a, b) => a.id - b.id);
+      cb(slides);
+    },
+    (err) => {
+      // Aborted streams / network hiccups / permission errors must not surface
+      // as unhandled rejections (Next.js dev overlay shows them as AbortError).
+      // The storefront gracefully falls back to the built-in default slides.
+      console.warn("[hero-slides] listener error:", err?.message ?? err);
+    }
+  );
+}
+export async function subscribeNewsletterFS(email: string): Promise<void> {
+  const ref = doc(db, NEWSLETTER_COL, email.toLowerCase());
+  await setDoc(ref, { email, subscribedAt: new Date().toISOString() });
+}
+
+// ─── Admin Whitelist (kb_admins collection) ───────────────────────────────────
+export async function loadAllowedAdminsFS(): Promise<string[]> {
+  const snap = await getDoc(doc(db, ADMINS_COL, "whitelist"));
+  if (snap.exists()) return (snap.data().emails as string[]) || [];
+  // No whitelist document found — return empty (admin must create kb_admins/whitelist in Firestore Console)
+  return [];
+}
+
+export async function saveAllowedAdminsFS(emails: string[]): Promise<void> {
+  await setDoc(doc(db, ADMINS_COL, "whitelist"), { emails });
+}
+
+export function onAllowedAdminsChange(callback: (emails: string[]) => void): Unsubscribe {
+  return onSnapshot(doc(db, ADMINS_COL, "whitelist"), (snap) => {
+    if (snap.exists()) callback((snap.data().emails as string[]) || []);
+    else callback([]);
   });
-  return { list, meta };
-}
-
-export async function saveCategoryFS(name: string, data: CategoryMeta): Promise<void> {
-  await setDoc(doc(db, CATS_COL, name), data);
-}
-
-export async function deleteCategoryFS(name: string): Promise<void> {
-  await deleteDoc(doc(db, CATS_COL, name));
 }

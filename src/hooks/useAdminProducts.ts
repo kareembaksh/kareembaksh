@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { products as staticProducts } from "@/lib/products";
+import { onAdminDataChange, onReviewsChange, onProductReviews, type AdminData, loadProductsFS, loadCategoriesFS } from "@/lib/firestore";
 import type { Product, Review } from "@/lib/types";
-import { onAdminDataChange, onReviewsChange, onProductReviews, type AdminData } from "@/lib/firestore";
 
 // ─── helper: merge static + admin data → visible product list ───────────────
-function computeVisible(d: AdminData, reviews: Review[]): Product[] {
+function computeVisible(d: AdminData, reviews: Review[], firestoreProds: Product[]): Product[] {
   const approvedReviews = reviews.filter(r => r.status === "Approved");
   const statsByProduct  = approvedReviews.reduce((acc, rev) => {
     if (!acc[rev.productId]) acc[rev.productId] = { totalRating: 0, count: 0 };
@@ -15,7 +14,7 @@ function computeVisible(d: AdminData, reviews: Review[]): Product[] {
     return acc;
   }, {} as Record<number, { totalRating: number; count: number }>);
 
-  const base  = staticProducts
+  const base  = firestoreProds
     .filter(p => !d.deleted.includes(p.id) && !d.hidden.includes(p.id))
     .map(p    => ({ ...p, ...(d.overrides[p.id] ?? {}) }));
 
@@ -32,13 +31,20 @@ function computeVisible(d: AdminData, reviews: Review[]): Product[] {
 
 // ─── useAdminProducts ────────────────────────────────────────────────────────
 export function useAdminProducts(): Product[] {
-  const [visibleProducts, setVisibleProducts] = useState<Product[]>(staticProducts);
+  const [visibleProducts, setVisibleProducts] = useState<Product[]>([]);
 
   useEffect(() => {
     let adminData:  AdminData  = { overrides: {}, added: [], deleted: [], hidden: [] };
     let reviewsArr: Review[]   = [];
 
-    const refresh = () => setVisibleProducts(computeVisible(adminData, reviewsArr));
+    let fsProds: Product[] = [];
+    
+    const refresh = () => setVisibleProducts(computeVisible(adminData, reviewsArr, fsProds));
+
+    loadProductsFS().then(ps => {
+      fsProds = ps;
+      refresh();
+    }).catch(console.error);
 
     // Real-time listeners on Firestore
     const unsubAdmin   = onAdminDataChange(d => { adminData   = d;   refresh(); });
@@ -63,29 +69,10 @@ export function useProductReviews(productId: number): Review[] {
 }
 
 // ─── useAdminCategories ──────────────────────────────────────────────────────
-// Still uses localStorage for categories (migrated later if needed)
 export function useAdminCategories() {
   const [cats, setCats] = useState<string[]>([]);
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("kb_categories");
-      const staticCats = staticProducts.reduce((acc, p) => {
-        if (!acc.includes(p.category) && p.category !== "All") acc.push(p.category);
-        return acc;
-      }, [] as string[]);
-
-      if (raw) {
-        let parsed = JSON.parse(raw);
-        if (!parsed.some((c: string) => staticCats.includes(c))) {
-          parsed = [...staticCats, ...parsed];
-          localStorage.setItem("kb_categories", JSON.stringify(parsed));
-        }
-        setCats(parsed);
-      } else {
-        setCats(staticCats);
-        localStorage.setItem("kb_categories", JSON.stringify(staticCats));
-      }
-    } catch {}
+    loadCategoriesFS().then(state => setCats(state.list)).catch(console.error);
   }, []);
   return cats;
 }
@@ -94,10 +81,7 @@ export function useAdminCategories() {
 export function useAdminCategoryMeta() {
   const [meta, setMeta] = useState<Record<string, { image: string; desc: string; media?: string[] }>>({});
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("kb_category_meta");
-      if (raw) setMeta(JSON.parse(raw));
-    } catch {}
+    loadCategoriesFS().then(state => setMeta(state.meta)).catch(console.error);
   }, []);
   return meta;
 }

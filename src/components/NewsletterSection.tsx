@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { subscribeNewsletterFS } from "@/lib/firestore";
 
 export default function NewsletterSection() {
   const [email, setEmail] = useState("");
@@ -12,11 +13,8 @@ export default function NewsletterSection() {
 
     setStatus("loading");
     try {
-      // Save to localStorage list
-      const saved = JSON.parse(localStorage.getItem("kb_subscribers") || "[]");
-      if (!saved.includes(email)) {
-        localStorage.setItem("kb_subscribers", JSON.stringify([...saved, email]));
-      }
+      // Save to Firestore
+      await subscribeNewsletterFS(email);
 
       // Send via EmailJS if configured
       const serviceId  = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID;

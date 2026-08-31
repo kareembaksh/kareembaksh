@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+import { getProductsServer } from "@/lib/serverProducts";
+import { loadPromosFS } from "@/lib/firestore";
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -11,25 +13,51 @@ export async function POST(req: NextRequest) {
   const base = process.env.NEXT_PUBLIC_BASE_URL || "https://www.kareembaksh.com";
 
   try {
-    const { items, customer, orderId, discount } = await req.json();
+    const { items, customer, orderId } = await req.json();
 
-    // Apply discount factor across all line items
-    const factor = discount > 0 ? (1 - discount / 100) : 1;
+    // 1. Fetch live products and promos from Firebase (Server-Side)
+    const [allProducts, allPromos] = await Promise.all([
+      getProductsServer(),
+      loadPromosFS()
+    ]);
 
-    const lineItems: Stripe.Checkout.SessionCreateParams["line_items"] = items.map((item: {
-      name: string; price: number; quantity: number; image: string;
-    }) => ({
-      price_data: {
-        currency: "usd",
-        product_data: {
-          name: item.name,
-          images: item.image?.startsWith("http") ? [item.image] : [],
+    // 2. Validate Promo Code
+    let serverDiscount = 0;
+    let promoType = "percent";
+    const promoCode = customer.promo?.trim().toUpperCase();
+    if (promoCode) {
+      const promo = allPromos.find(p => p.code === promoCode && p.active);
+      if (promo) {
+        serverDiscount = promo.value;
+        promoType = promo.type;
+      }
+    }
+    
+    // Apply discount factor across all line items (percent only for now)
+    const factor = (promoType === "percent" && serverDiscount > 0) ? (1 - serverDiscount / 100) : 1;
+
+    // 3. Build line items securely based on SERVER prices, ignoring client prices
+    const lineItems: Stripe.Checkout.SessionCreateParams["line_items"] = items.map((clientItem: any) => {
+      const serverProduct = allProducts.find(p => p.id === clientItem.id);
+      
+      if (!serverProduct) {
+        throw new Error(`Product not found: ${clientItem.name || clientItem.id}`);
+      }
+
+      return {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: serverProduct.name,
+            images: serverProduct.image?.startsWith("http") ? [serverProduct.image] : [],
+          },
+          unit_amount: Math.round(serverProduct.price * factor * 100),
         },
-        unit_amount: Math.round(item.price * factor * 100),
-      },
-      quantity: item.quantity,
-    }));
+        quantity: clientItem.quantity,
+      };
+    });
 
+    // 4. Create Stripe Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       mode: "payment",
@@ -45,7 +73,7 @@ export async function POST(req: NextRequest) {
         zip:        customer.zip,
         country:    customer.country,
         notes:      customer.notes || "",
-        promo:      customer.promo || "",
+        promo:      promoCode || "",
       },
       success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${base}/checkout`,

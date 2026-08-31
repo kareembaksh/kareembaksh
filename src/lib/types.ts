@@ -16,6 +16,7 @@ export interface Product {
 
 export interface CartItem extends Product {
   quantity: number;
+  selected?: boolean; // when false the item is excluded from checkout (legacy carts default to selected)
 }
 
 export type ReviewStatus = "Pending" | "Approved" | "Rejected";
@@ -27,4 +28,17 @@ export interface Review {
   rating: number; title: string; body: string;
   status: ReviewStatus;
   reply?: string;
+}
+
+export interface HeroSlide {
+  id: number;
+  badge: string;
+  title: string;
+  highlight: string;
+  desc: string;
+  cta: { label: string; href: string };
+  secondary?: { label: string; href: string };
+  image: string;
+  bg: string;      // Tailwind gradient classes, e.g. "from-rose-50 via-white to-pink-50"
+  active: boolean; // false = slide hidden from the storefront slider
 }

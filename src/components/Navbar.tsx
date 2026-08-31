@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useCart } from "./CartProvider";
+import { useAuth } from "@/lib/authContext";
 import CartDrawer from "./CartDrawer";
 
 export default function Navbar() {
   const { totalItems } = useCart();
+  const { user } = useAuth();
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -39,6 +41,16 @@ export default function Navbar() {
 
             {/* Right side */}
             <div className="flex items-center gap-4">
+              {user ? (
+                <Link href="/account" className="hidden md:block text-sm font-semibold text-rose-500 hover:text-rose-600 transition-colors">
+                  Account
+                </Link>
+              ) : (
+                <Link href="/login" className="hidden md:block text-sm font-semibold text-rose-500 hover:text-rose-600 transition-colors">
+                  Log in
+                </Link>
+              )}
+
               <button
                 onClick={() => setCartOpen(true)}
                 className="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-zinc-100 transition-colors"
@@ -77,6 +89,13 @@ export default function Navbar() {
               <Link href="/products?category=Hand+Sanitizers" onClick={() => setMenuOpen(false)} className="hover:text-zinc-900">Hand Sanitizers</Link>
               <Link href="/products?category=Skincare" onClick={() => setMenuOpen(false)} className="hover:text-zinc-900">Skincare</Link>
               <Link href="/products?category=Accessories" onClick={() => setMenuOpen(false)} className="hover:text-zinc-900">Accessories</Link>
+              
+              <div className="h-px bg-zinc-100 my-2"></div>
+              {user ? (
+                <Link href="/account" onClick={() => setMenuOpen(false)} className="text-rose-500 font-bold">My Account</Link>
+              ) : (
+                <Link href="/login" onClick={() => setMenuOpen(false)} className="text-rose-500 font-bold">Log in / Sign up</Link>
+              )}
             </div>
           )}
         </div>

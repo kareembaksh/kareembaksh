@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
-import { saveOrderFS } from "@/lib/firestore";
+import { saveOrderFS, loadPromosFS, type PromoCode } from "@/lib/firestore";
 
 interface FormData {
   name: string; email: string; phone: string;
@@ -14,46 +14,45 @@ interface FormData {
 
 const EMPTY: FormData = { name:"", email:"", phone:"", address:"", city:"", state:"", zip:"", country:"US", notes:"" };
 
-const PROMO_CODES: Record<string, { discount: number; type: "percent" | "fixed"; label: string }> = {
-  "WELCOME10": { discount: 10, type: "percent", label: "10% off — Welcome discount" },
-  "KB15":      { discount: 15, type: "percent", label: "15% off" },
-  "SAVE5":     { discount: 5,  type: "fixed",   label: "$5 off your order" },
-  "KBVIP":     { discount: 20, type: "percent", label: "20% VIP discount" },
-  "SUMMER":    { discount: 12, type: "percent", label: "12% Summer sale" },
-};
+
 
 function genOrderId() {
   return `KB-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 }
 
 export default function CheckoutPage() {
-  const { items, totalPrice, clearCart } = useCart();
+  const { items, selectedItems, totalPrice } = useCart();
   const [form, setForm]     = useState<FormData>(EMPTY);
   const [errors, setErrors] = useState<Partial<FormData>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  // Promo code
+  // Promo codes loaded from Firestore
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
   const [promoInput, setPromoInput]     = useState("");
-  const [promoApplied, setPromoApplied] = useState<typeof PROMO_CODES[string] | null>(null);
+  const [promoApplied, setPromoApplied] = useState<PromoCode | null>(null);
   const [promoError, setPromoError]     = useState("");
+
+  useEffect(() => {
+    loadPromosFS().then(setPromoCodes).catch(() => setPromoCodes([]));
+  }, []);
 
   const discountAmount = promoApplied
     ? promoApplied.type === "percent"
-      ? totalPrice * promoApplied.discount / 100
-      : Math.min(promoApplied.discount, totalPrice)
+      ? totalPrice * promoApplied.value / 100
+      : Math.min(promoApplied.value, totalPrice)
     : 0;
   const finalTotal = totalPrice - discountAmount;
 
   const stripeConfigured = !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
-  if (items.length === 0) {
+  if (selectedItems.length === 0) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-4 text-zinc-400">
         <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
         </svg>
-        <p className="text-lg font-medium">Your cart is empty</p>
+        <p className="text-lg font-medium">{items.length > 0 ? "No items selected for checkout" : "Your cart is empty"}</p>
         <Link href="/products" className="text-rose-500 hover:text-rose-600 font-semibold text-sm">Browse Products</Link>
       </main>
     );
@@ -61,8 +60,13 @@ export default function CheckoutPage() {
 
   function applyPromo() {
     const code = promoInput.trim().toUpperCase();
-    if (PROMO_CODES[code]) { setPromoApplied(PROMO_CODES[code]); setPromoError(""); }
-    else { setPromoApplied(null); setPromoError("Invalid promo code"); }
+    const found = promoCodes.find(
+      p => p.id === code && p.active &&
+        (!p.startAt    || new Date(p.startAt)    <= new Date()) &&
+        (!p.expiresAt  || new Date(p.expiresAt)  >= new Date())
+    );
+    if (found) { setPromoApplied(found); setPromoError(""); }
+    else { setPromoApplied(null); setPromoError("Invalid or expired promo code"); }
   }
 
   function validate() {
@@ -93,14 +97,14 @@ export default function CheckoutPage() {
     setSubmitError("");
 
     const orderId = genOrderId();
-    const discountPercent = promoApplied?.type === "percent" ? promoApplied.discount : 0;
+    const discountPercent = promoApplied?.type === "percent" ? promoApplied.value : 0;
 
     try {
       const res = await fetch("/api/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: items.map(i => ({ name: i.name, price: i.price, quantity: i.quantity, image: i.image })),
+          items: selectedItems.map(i => ({ name: i.name, price: i.price, quantity: i.quantity, image: i.image })),
           customer: { ...form, promo: promoInput.toUpperCase() },
           orderId,
           discount: discountPercent,
@@ -118,12 +122,15 @@ export default function CheckoutPage() {
         const order = {
           id: orderId, date: new Date().toISOString(),
           customer: { name: form.name, email: form.email, phone: form.phone, address: form.address, city: form.city, state: form.state, zip: form.zip },
-          items: items.map(i => ({ productId: i.id, name: i.name, price: i.price, qty: i.quantity, image: i.image })),
+          items: selectedItems.map(i => ({ productId: i.id, name: i.name, price: i.price, qty: i.quantity, image: i.image })),
           total: finalTotal, status: "Pending" as const, tracking: "",
           notes: [form.notes, promoApplied ? `Promo: ${promoInput.toUpperCase()}` : ""].filter(Boolean).join(" | "),
         };
         await saveOrderFS(order);
       } catch { /* ignore */ }
+
+      // Remember which items were purchased so the success page removes only those
+      try { sessionStorage.setItem("kb_checkout_items", JSON.stringify(selectedItems.map(i => i.id))); } catch {}
 
       window.location.href = data.url;
     } catch (err: unknown) {
@@ -201,7 +208,7 @@ export default function CheckoutPage() {
               <h2 className="text-base font-bold text-zinc-900">Order Summary</h2>
 
               <div className="space-y-3 max-h-60 overflow-y-auto">
-                {items.map(item => (
+                {selectedItems.map(item => (
                   <div key={item.id} className="flex gap-3 items-center">
                     <div className="relative w-14 h-14 rounded-lg overflow-hidden bg-zinc-100 flex-shrink-0">
                       <Image src={item.image} alt={item.name} fill className="object-cover" sizes="56px" />
@@ -222,7 +229,7 @@ export default function CheckoutPage() {
                   <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-3 py-2">
                     <div>
                       <p className="text-xs font-bold text-green-700">{promoInput.toUpperCase()}</p>
-                      <p className="text-xs text-green-600">{promoApplied.label}</p>
+                      <p className="text-xs text-green-600">{promoApplied.description}</p>
                     </div>
                     <button type="button" onClick={() => { setPromoApplied(null); setPromoInput(""); }} className="text-green-500 hover:text-green-700 text-xs font-medium">Remove</button>
                   </div>

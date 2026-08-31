@@ -1,14 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { products as staticProducts, categories, STATIC_CATEGORY_META } from "@/lib/products";
-import type { Product, Review, ReviewStatus } from "@/lib/types";
+
+import type { Product, Review, ReviewStatus, HeroSlide } from "@/lib/types";
 import {
   loadAdminDataFS, saveAdminDataFS, onAdminDataChange, type AdminData,
   loadOrdersFS, saveOrderFS, updateOrderFS, onOrdersChange, type Order, type OrderItem, type OrderStatus,
   loadReviewsFS, addReviewFS, updateReviewFS, deleteReviewFS, onReviewsChange,
   loadPromosFS, savePromoFS, deletePromoFS, type PromoCode,
+  loadProductsFS, loadCategoriesFS, saveCategoriesFS,
+  loadAllowedAdminsFS, saveAllowedAdminsFS, onAllowedAdminsChange,
+  onHeroSlidesChange, saveHeroSlideFS, deleteHeroSlideFS,
 } from "@/lib/firestore";
+import { DEFAULT_HERO_SLIDES } from "@/components/HeroSlider";
 import { auth } from "@/lib/firebase";
 import {
   signInWithEmailAndPassword,
@@ -17,10 +21,6 @@ import {
   createUserWithEmailAndPassword,
   type User,
 } from "firebase/auth";
-
-const PASSWORD  = "KBadmin2025";
-const PROMO_KEY = "kb_promos";
-const CAT_KEY   = "kb_categories";
 
 // ── Types (still needed locally) ──────────────────────────────────────────────
 type DiscountType = "percent" | "fixed";
@@ -61,13 +61,26 @@ function exportReviewsCSV(reviews: Review[]) {
   downloadCSV("kb_reviews.csv", [header, ...rows]);
 }
 
-function mergeAll(d: AdminData): Product[] {
-  const base = staticProducts.filter(p => !d.deleted.includes(p.id)).map(p => ({ ...p, ...(d.overrides[p.id] ?? {}) }));
+function mergeAll(d: AdminData, prods: Product[]): Product[] {
+  const base = prods.filter((p: Product) => !d.deleted.includes(p.id)).map((p: Product) => ({ ...p, ...(d.overrides[p.id] ?? {}) }));
   return [...base, ...d.added];
 }
 
 // ── Misc constants ─────────────────────────────────────────────────────────────
 const BLANK: Omit<Product, "id"> = { name:"", category:"Women's Bags", price:0, originalPrice:undefined, image:"", images:[], description:"", badge:undefined, rating:4.5, reviews:0, quantity:100, sortOrder:0 };
+
+const BLANK_HERO: Omit<HeroSlide, "id"> = {
+  badge:"", title:"", highlight:"", desc:"",
+  cta:{ label:"Shop Now", href:"/products" }, secondary:{ label:"View All", href:"/products" },
+  image:"", bg:"from-rose-50 via-white to-pink-50", active:true,
+};
+const HERO_BG_PRESETS = [
+  "from-rose-50 via-white to-pink-50",
+  "from-blue-50 via-white to-indigo-50",
+  "from-amber-50 via-white to-orange-50",
+  "from-green-50 via-white to-teal-50",
+  "from-zinc-100 via-white to-zinc-50",
+];
 
 const BADGE_STYLES: Record<string, string> = { Hot:"bg-red-100 text-red-600", New:"bg-blue-100 text-blue-600", Sale:"bg-amber-100 text-amber-600", Popular:"bg-purple-100 text-purple-600" };
 
@@ -95,7 +108,12 @@ export default function AdminPanel() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [authLoading, setAuthLoading]     = useState(true);
 
+  // Admin whitelist (loaded from Firestore)
+  const [allowedAdmins, setAllowedAdmins] = useState<string[]>([]);
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+
   // Products
+  const [firestoreProds, setFirestoreProds] = useState<Product[]>([]);
   const [prodData, setProdData]       = useState<AdminData>({ overrides:{}, added:[], deleted:[], hidden:[] });
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [search, setSearch]           = useState(""); const [catFilter, setCatFilter] = useState("All");
@@ -149,6 +167,7 @@ export default function AdminPanel() {
   
   const catFileRef = useRef<HTMLInputElement>(null);
   const catEditFileRef = useRef<HTMLInputElement>(null);
+  const heroFileRef  = useRef<HTMLInputElement>(null);
 
   // Promos
   const [promos, setPromos]               = useState<PromoCode[]>([]);
@@ -162,90 +181,81 @@ export default function AdminPanel() {
   const [promoSearch, setPromoSearch]     = useState("");
   const [promoPage, setPromoPage]         = useState(1);
 
+  // Hero Slides
+  const [heroSlides, setHeroSlides]     = useState<HeroSlide[]>([]);
+  const [heroModal, setHeroModal]       = useState(false);
+  const [editHero, setEditHero]         = useState<HeroSlide|null>(null);
+  const [heroForm, setHeroForm]         = useState<Omit<HeroSlide,"id">>(BLANK_HERO);
+  const [deleteHeroId, setDeleteHeroId] = useState<number|null>(null);
+
   // Nav + toast
   const [page, setPage] = useState<Page>("dashboard");
   const [toast, setToast] = useState("");
 
-  useEffect(() => { if (sessionStorage.getItem("kb_auth")==="1") setAuthed(true); }, []);
+  useEffect(() => { /* sessionStorage removed — using Firebase auth only */ }, []);
   useEffect(() => {
     if (!authed) return;
 
     // ── Firestore real-time listeners ──────────────────────────────────────
-    const unsubAdmin = onAdminDataChange(d => {
+    let fsProds: Product[] = [];
+    loadProductsFS().then((ps: Product[]) => { fsProds = ps; setFirestoreProds(ps); }).catch(console.error);
+
+    const unsubAdmin = onAdminDataChange((d: AdminData) => {
       setProdData(d);
-      setAllProducts(mergeAll(d));
+      setAllProducts(mergeAll(d, fsProds));
     });
 
     const unsubOrders = onOrdersChange(os => setOrders(os));
     const unsubReviews = onReviewsChange(rs => setReviews(rs));
 
-    // ── Promos (still localStorage, migrated later) ─────────────────────
-    try {
-      const raw = localStorage.getItem("kb_promos");
-      if (raw) setPromos(JSON.parse(raw));
-      else {
-        const seed: PromoCode[] = [
-          { id:"p1", code:"WELCOME10", description:"Welcome discount",  type:"percent", value:10, active:true },
-          { id:"p2", code:"KB15",      description:"15% off",           type:"percent", value:15, active:true },
-          { id:"p3", code:"SAVE5",     description:"$5 off any order",  type:"fixed",   value:5,  active:true },
-          { id:"p4", code:"KBVIP",     description:"20% VIP discount",  type:"percent", value:20, active:true },
-          { id:"p5", code:"SUMMER",    description:"12% Summer sale",   type:"percent", value:12, active:true },
-        ];
-        setPromos(seed); localStorage.setItem("kb_promos", JSON.stringify(seed));
-      }
-    } catch {}
+    // ── Promos ─────────────────────
+    loadPromosFS().then(setPromos).catch(console.error);
 
-    // ── Categories (still localStorage) ────────────────────────────────
-    try {
-      const rawCats = localStorage.getItem(CAT_KEY);
-      const rawMeta = localStorage.getItem("kb_category_meta");
-      const staticCats = categories.filter(c => c !== "All");
-      if (rawMeta) setCategoryMeta(JSON.parse(rawMeta));
-      if (rawCats) {
-        const parsed: string[] = JSON.parse(rawCats);
-        const missingSatic = staticCats.filter(sc => !parsed.includes(sc));
-        const merged = missingSatic.length > 0 ? [...missingSatic, ...parsed] : parsed;
-        if (missingSatic.length > 0) localStorage.setItem(CAT_KEY, JSON.stringify(merged));
-        setCustomCategories(merged);
-      } else {
-        setCustomCategories(staticCats);
-        localStorage.setItem(CAT_KEY, JSON.stringify(staticCats));
-      }
-    } catch {}
+    // --- Hero Slides (real-time) ---
+    const unsubHero = onHeroSlidesChange(slides => setHeroSlides(slides));
 
-    return () => { unsubAdmin(); unsubOrders(); unsubReviews(); };
+    // ── Categories ────────────────────────────────
+    loadCategoriesFS().then((state) => {
+      setCustomCategories(state.list);
+      setCategoryMeta(state.meta);
+    }).catch(console.error);
+
+    // ── Admin whitelist (real-time) ───────────────
+    const unsubAdmins = onAllowedAdminsChange(emails => setAllowedAdmins(emails));
+
+    return () => { unsubAdmin(); unsubOrders(); unsubReviews(); unsubAdmins(); unsubHero(); };
   }, [authed]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
-  const savePromos = (list: PromoCode[]) => { setPromos(list); localStorage.setItem(PROMO_KEY, JSON.stringify(list)); };
-  const saveCustomCats = (list: string[], metaObj: Record<string, {image:string, desc:string, media?:string[]}> = categoryMeta) => {
+  const savePromos = async (list: PromoCode[]) => {
+    setPromos(list);
+    for (const p of list) await savePromoFS(p);
+  };
+  const saveCustomCats = async (list: string[], metaObj: Record<string, {image:string, desc:string, media?:string[]}> = categoryMeta) => {
     setCustomCategories(list);
     setCategoryMeta(metaObj);
-    localStorage.setItem(CAT_KEY, JSON.stringify(list));
-    localStorage.setItem("kb_category_meta", JSON.stringify(metaObj));
+    await saveCategoriesFS({ list, meta: metaObj });
   };
   const addCustomCat = () => {
     const v = catMgrInput.trim();
     if (!v) return;
-    const allCats = [...categories, ...customCategories];
-    if (allCats.map(c=>c.toLowerCase()).includes(v.toLowerCase())) { showToast("Category already exists."); return; }
-    
+    if (customCategories.map(c=>c.toLowerCase()).includes(v.toLowerCase())) { showToast("Category already exists."); return; }
     const newMeta = { ...categoryMeta, [v]: { image: catMgrImage.trim(), desc: catMgrDesc.trim() || "View products", media: catMgrMedia } };
-    saveCustomCats([...customCategories, v], newMeta); 
+    saveCustomCats([...customCategories, v], newMeta);
     setCatMgrInput(""); setCatMgrImage(""); setCatMgrDesc(""); setCatMgrMedia([]);
     showToast(`Category "${v}" added.`);
   };
-  const deleteCustomCat = (cat: string) => { 
+  const deleteCustomCat = (cat: string) => {
     const newMeta = { ...categoryMeta };
     delete newMeta[cat];
-    saveCustomCats(customCategories.filter(c=>c!==cat), newMeta); 
-    setDeleteCatId(null); 
-    showToast("Category deleted."); 
+    saveCustomCats(customCategories.filter(c=>c!==cat), newMeta);
+    setDeleteCatId(null);
+    showToast("Category deleted.");
   };
-  const startEditCat = (cat: string) => { 
-    setCatMgrEditing(cat); 
-    setCatMgrEditVal(cat); 
-    const meta = categoryMeta[cat] || STATIC_CATEGORY_META[cat];
+  const startEditCat = (cat: string) => {
+    setCatMgrEditing(cat);
+    setCatMgrEditVal(cat);
+    const meta = categoryMeta[cat] || {};
     setCatMgrEditImage(meta?.image || "");
     setCatMgrEditDesc(meta?.desc || "");
     setCatMgrEditMedia(meta?.media || []);
@@ -254,16 +264,13 @@ export default function AdminPanel() {
     if (!catMgrEditing) return;
     const v = catMgrEditVal.trim();
     if (!v) { setCatMgrEditing(null); return; }
-    
-    const allCats = [...categories, ...customCategories.filter(c=>c!==catMgrEditing)];
+    const allCats = customCategories.filter(c=>c!==catMgrEditing);
     if (v !== catMgrEditing && allCats.map(c=>c.toLowerCase()).includes(v.toLowerCase())) { showToast("Name already exists."); return; }
-    
     const newMeta = { ...categoryMeta };
     if (v !== catMgrEditing) delete newMeta[catMgrEditing];
     newMeta[v] = { image: catMgrEditImage.trim(), desc: catMgrEditDesc.trim() || "View products", media: catMgrEditMedia };
-    
     saveCustomCats(customCategories.map(c=>c===catMgrEditing?v:c), newMeta);
-    setCatMgrEditing(null); 
+    setCatMgrEditing(null);
     showToast(`Category "${v}" updated.`);
   };
 
@@ -341,11 +348,58 @@ export default function AdminPanel() {
     return "Active";
   };
 
+  // --- Hero slide helpers ---
+  const openAddHero  = () => { setEditHero(null); setHeroForm(BLANK_HERO); setHeroModal(true); };
+  const openEditHero = (s: HeroSlide) => {
+    setEditHero(s);
+    setHeroForm({
+      badge: s.badge, title: s.title, highlight: s.highlight, desc: s.desc,
+      cta: { ...s.cta }, secondary: s.secondary ? { ...s.secondary } : undefined,
+      image: s.image, bg: s.bg || HERO_BG_PRESETS[0], active: s.active !== false,
+    });
+    setHeroModal(true);
+  };
+  const handleHeroImgFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setHeroForm(f => ({ ...f, image: reader.result as string }));
+    reader.readAsDataURL(file);
+  };
+  const handleSaveHero = async () => {
+    if (!heroForm.title.trim() || !heroForm.highlight.trim()) { showToast("Title and highlight are required."); return; }
+    if (!heroForm.image.trim()) { showToast("Image is required (URL or upload)."); return; }
+    const nextId = editHero ? editHero.id : (heroSlides.length ? Math.max(...heroSlides.map(s => s.id)) + 1 : 1);
+    const toSave: HeroSlide = { ...heroForm, secondary: (heroForm.secondary && heroForm.secondary.label.trim()) ? heroForm.secondary : undefined, id: nextId };
+    if (!toSave.secondary) delete toSave.secondary;
+    await saveHeroSlideFS(toSave);
+    showToast(editHero ? "Slide updated." : "Slide created.");
+    setHeroModal(false);
+  };
+  const toggleHero = async (s: HeroSlide) => {
+    await saveHeroSlideFS({ ...s, active: !(s.active !== false) });
+    showToast(s.active !== false ? "Slide hidden from storefront." : "Slide is now visible.");
+  };
+  const removeHero = async (id: number) => { await deleteHeroSlideFS(id); setDeleteHeroId(null); showToast("Slide deleted."); };
+  const seedHeroDefaults = async () => {
+    for (const s of DEFAULT_HERO_SLIDES) await saveHeroSlideFS(s);
+    showToast("Default slides loaded - now fully editable.");
+  };
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       if (u) {
-        setUser(u);
-        setAuthed(true);
+        // Fetch latest whitelist from Firestore at login time
+        const admins = await loadAllowedAdminsFS();
+        setAllowedAdmins(admins);
+        if (u.email && admins.map(e => e.toLowerCase()).includes(u.email.toLowerCase())) {
+          setUser(u);
+          setAuthed(true);
+        } else {
+          await signOut(auth);
+          setUser(null);
+          setAuthed(false);
+          setAuthError("Unauthorized: You do not have admin privileges.");
+        }
       } else {
         setUser(null);
         setAuthed(false);
@@ -355,14 +409,34 @@ export default function AdminPanel() {
     return () => unsub();
   }, []);
 
+  const handleResetPassword = async () => {
+    setAuthError("");
+    if (!email.trim()) {
+      setAuthError("Please enter your email to reset password.");
+      return;
+    }
+    try {
+      const { sendPasswordResetEmail } = await import("firebase/auth");
+      await sendPasswordResetEmail(auth, email.trim());
+      showToast("Password reset email sent! Check your inbox.");
+    } catch (err: any) {
+      setAuthError(err.message || "Failed to send reset email.");
+    }
+  };
+
   const handleAuth = async () => {
     setAuthError("");
     if (!email.trim() || !pw.trim()) {
       setAuthError("Email and password are required.");
       return;
     }
-
     try {
+      // Always fetch latest whitelist from Firestore before checking
+      const latestAdmins = await loadAllowedAdminsFS();
+      if (!latestAdmins.map(e => e.toLowerCase()).includes(email.trim().toLowerCase())) {
+        setAuthError("Unauthorized: This email is not permitted as admin.");
+        return;
+      }
       if (isRegistering) {
         await createUserWithEmailAndPassword(auth, email.trim(), pw.trim());
         showToast("Admin account created & signed in!");
@@ -389,7 +463,7 @@ export default function AdminPanel() {
   };
 
   // Product helpers
-  const updateProd = (d: AdminData) => { setProdData(d); saveAdminDataFS(d); setAllProducts(mergeAll(d)); };
+  const updateProd = (d: AdminData) => { setProdData(d); saveAdminDataFS(d); setAllProducts(mergeAll(d, firestoreProds)); };
   const openAdd  = () => { setEditing(null); setForm(BLANK); setImgMode("url"); setExtraImgUrl(""); setPage("add"); };
   const openEdit = (p: Product) => { setEditing(p); setForm({...p, images: p.images ?? []}); setImgMode("url"); setExtraImgUrl(""); setPage("add"); };
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -418,7 +492,7 @@ export default function AdminPanel() {
   const handleSaveProd = () => {
     if (!form.name.trim()||!form.price){ showToast("Name and price required."); return; }
     if (editing){
-      if (staticProducts.some(p=>p.id===editing.id)) updateProd({...prodData, overrides:{...prodData.overrides,[editing.id]:form}});
+      if (firestoreProds.some((p: Product) => p.id===editing.id)) updateProd({...prodData, overrides:{...prodData.overrides,[editing.id]:form}});
       else updateProd({...prodData, added:prodData.added.map(p=>p.id===editing.id?{...form,id:editing.id}:p)});
     } else {
       const newId = Math.max(...allProducts.map(p=>p.id),1000)+1;
@@ -427,7 +501,7 @@ export default function AdminPanel() {
     showToast(editing?"Product updated.":"Product added."); setPage("products"); setEditing(null);
   };
   const handleDeleteProd = (id: number) => {
-    if (staticProducts.some(p=>p.id===id)) updateProd({...prodData, deleted:[...prodData.deleted,id]});
+    if (firestoreProds.some((p: Product) => p.id===id)) updateProd({...prodData, deleted:[...prodData.deleted,id]});
     else updateProd({...prodData, added:prodData.added.filter(p=>p.id!==id)});
     setDeleteId(null); showToast("Product deleted.");
   };
@@ -574,7 +648,7 @@ export default function AdminPanel() {
               value={pw}
               onChange={e => { setPw(e.target.value); setAuthError(""); }}
               onKeyDown={e => e.key === "Enter" && handleAuth()}
-              placeholder="••••••••"
+              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
               className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"
             />
           </div>
@@ -593,13 +667,21 @@ export default function AdminPanel() {
           {isRegistering ? "Create & Sign In" : "Sign In"}
         </button>
 
-        <div className="mt-4 text-center">
+        <div className="mt-4 text-center space-y-3">
           <button
             onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); }}
-            className="text-xs text-rose-500 font-semibold hover:underline"
+            className="text-xs text-rose-500 font-semibold hover:underline block w-full"
           >
             {isRegistering ? "Already have an admin account? Sign In" : "First time? Create Admin Account"}
           </button>
+          {!isRegistering && (
+            <button
+              onClick={handleResetPassword}
+              className="text-xs text-zinc-500 font-medium hover:text-zinc-700 hover:underline block w-full"
+            >
+              Forgot Password?
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -614,7 +696,7 @@ export default function AdminPanel() {
         <div className="flex items-center gap-3"><KBIcon/><span className="font-bold text-base">KB Admin Panel</span></div>
         <div className="flex items-center gap-5 text-sm">
           <span className="text-xs text-zinc-400 font-mono hidden sm:inline">{user?.email}</span>
-          <a href="/" target="_blank" className="text-zinc-400 hover:text-white transition-colors">View Store ↗</a>
+          <a href="/" target="_blank" className="text-zinc-400 hover:text-white transition-colors">View Store â†—</a>
           <button onClick={handleLogout} className="text-zinc-400 hover:text-white transition-colors">Sign Out</button>
         </div>
       </header>
@@ -740,7 +822,7 @@ export default function AdminPanel() {
                         {/* Info */}
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-zinc-900 truncate">{r.productName}</p>
-                          <p className="text-[11px] text-zinc-400 truncate">{r.author} · <Stars n={r.rating}/></p>
+                          <p className="text-[11px] text-zinc-400 truncate">{r.author} Â· <Stars n={r.rating}/></p>
                         </div>
                         {/* Actions */}
                         <div className="flex items-center gap-1 flex-shrink-0">
@@ -748,12 +830,12 @@ export default function AdminPanel() {
                             onClick={e=>{e.stopPropagation();setRevStatus(r.id,"Approved");}}
                             className="w-7 h-7 rounded-lg bg-green-100 hover:bg-green-200 text-green-700 font-bold text-sm flex items-center justify-center transition-colors"
                             title="Approve"
-                          >✓</button>
+                          >âœ“</button>
                           <button
                             onClick={e=>{e.stopPropagation();setRevStatus(r.id,"Rejected");}}
                             className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 font-bold text-sm flex items-center justify-center transition-colors"
                             title="Reject"
-                          >✕</button>
+                          >âœ•</button>
                         </div>
                       </div>
                     ))}
@@ -900,11 +982,11 @@ export default function AdminPanel() {
                 {/* Pagination footer */}
                 <div className="px-5 py-3.5 border-t border-zinc-100 bg-zinc-50/50 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
                   <p className="text-xs text-zinc-500">
-                    Showing <span className="font-semibold text-zinc-800">{filteredProducts.length > 0 ? (prodPage - 1) * 15 + 1 : 0}</span>–<span className="font-semibold text-zinc-800">{Math.min(prodPage * 15, filteredProductsAll.length)}</span> of <span className="font-semibold text-zinc-800">{filteredProductsAll.length}</span> products
-                    {totalProdPages > 1 && <span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-600">{prodPage}</span> of {totalProdPages}</span>}
+                    Showing <span className="font-semibold text-zinc-800">{filteredProducts.length > 0 ? (prodPage - 1) * 15 + 1 : 0}</span>â€“<span className="font-semibold text-zinc-800">{Math.min(prodPage * 15, filteredProductsAll.length)}</span> of <span className="font-semibold text-zinc-800">{filteredProductsAll.length}</span> products
+                    {totalProdPages > 1 && <span className="ml-2 text-zinc-400">Â· Page <span className="font-semibold text-zinc-600">{prodPage}</span> of {totalProdPages}</span>}
                   </p>
                   <div className="flex items-center gap-1">
-                    <button onClick={()=>setProdPage(p=>Math.max(1, p-1))} disabled={prodPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                    <button onClick={()=>setProdPage(p=>Math.max(1, p-1))} disabled={prodPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">â† Prev</button>
                     {Array.from({length: totalProdPages}, (_,i)=>i+1).filter(n=>n===1||n===totalProdPages||Math.abs(n-prodPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{ if(idx>0&&(n as number)-(arr[idx-1] as number)>1) acc.push('...'); acc.push(n); return acc; },[]).map((n,i)=>
                       typeof n==='string' ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span> :
                       <button key={i} onClick={()=>setProdPage(n as number)} className={`min-w-[32px] h-8 text-xs font-semibold rounded-lg border transition-colors ${prodPage===n?'bg-rose-500 border-rose-500 text-white shadow-sm shadow-rose-200':'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'}`}>{n}</button>
@@ -954,7 +1036,7 @@ export default function AdminPanel() {
                               <img src={src} alt={`extra ${i+1}`} className="w-20 h-20 object-cover rounded-xl border border-zinc-200"/>
                             )}
                             <button type="button" onClick={() => removeExtraImg(i)}
-                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">âœ•</button>
                           </div>
                         );
                       })}
@@ -991,7 +1073,7 @@ export default function AdminPanel() {
                 <div className="p-6 border-b border-zinc-100 space-y-4">
                   <p className="text-sm font-semibold text-zinc-800">Ratings & Display Position</p>
                   <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Rating (1–5)</label><input type="number" step="0.1" min="1" max="5" value={form.rating} onChange={e=>setForm(f=>({...f,rating:parseFloat(e.target.value)||4.5}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
+                    <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Rating (1â€“5)</label><input type="number" step="0.1" min="1" max="5" value={form.rating} onChange={e=>setForm(f=>({...f,rating:parseFloat(e.target.value)||4.5}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
                     <div><label className="block text-xs font-medium text-zinc-600 mb-1.5">Review Count</label><input type="number" min="0" value={form.reviews} onChange={e=>setForm(f=>({...f,reviews:parseInt(e.target.value)||0}))} className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/></div>
                   </div>
                   <div>
@@ -1046,13 +1128,13 @@ export default function AdminPanel() {
                 overrides: { ...prodData.overrides },
                 added:     prodData.added.map(a => a.id === id ? { ...a, quantity: newQty } : a),
               };
-              const isStatic = staticProducts.some(p => p.id === id);
+              const isStatic = firestoreProds.some(p => p.id === id);
               if (isStatic) {
                 newData.overrides = { ...newData.overrides, [id]: { ...(newData.overrides[id] || {}), quantity: newQty } };
               }
               setProdData(newData);
               saveAdminDataFS(newData);
-              setAllProducts(mergeAll(newData));
+              setAllProducts(mergeAll(newData, firestoreProds));
               showToast("Stock updated.");
             };
 
@@ -1089,9 +1171,9 @@ export default function AdminPanel() {
                   <select value={stockQtyOp} onChange={e=>{setStockQtyOp(e.target.value as any);setStockPage(1);}} className="border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 bg-white text-zinc-700">
                     <option value="off">Quantity (any)</option>
                     <option value="lt">Qty &lt; …</option>
-                    <option value="lte">Qty ≤ …</option>
+                    <option value="lte">Qty â‰¤ …</option>
                     <option value="gt">Qty &gt; …</option>
-                    <option value="gte">Qty ≥ …</option>
+                    <option value="gte">Qty â‰¥ …</option>
                   </select>
                   {/* Qty value input (only shown when op selected) */}
                   {stockQtyOp !== "off" && (
@@ -1140,7 +1222,7 @@ export default function AdminPanel() {
                             <td className="px-4 py-3">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button onClick={()=>updateStock(p.id, p.quantity-10)} className="px-2 py-1 text-xs font-semibold bg-zinc-100 text-zinc-600 hover:bg-zinc-200 rounded-lg transition-colors">-10</button>
-                                <button onClick={()=>updateStock(p.id, p.quantity-1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 font-bold text-base transition-colors">−</button>
+                                <button onClick={()=>updateStock(p.id, p.quantity-1)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 font-bold text-base transition-colors">âˆ’</button>
                                 {/* Inline editable qty */}
                                 {editingQty === p.id ? (
                                   <input
@@ -1181,11 +1263,11 @@ export default function AdminPanel() {
                   {/* ─ Pagination footer (same style as Products) ─ */}
                   <div className="px-5 py-3.5 border-t border-zinc-100 bg-zinc-50/50 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
                     <p className="text-xs text-zinc-500">
-                      Showing <span className="font-semibold text-zinc-800">{stockProducts.length>0?(stockPage-1)*PER_PAGE+1:0}</span>–<span className="font-semibold text-zinc-800">{Math.min(stockPage*PER_PAGE,stockProducts.length)}</span> of <span className="font-semibold text-zinc-800">{stockProducts.length}</span> products
-                      {totalStockPages>1&&<span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-600">{stockPage}</span> of {totalStockPages}</span>}
+                      Showing <span className="font-semibold text-zinc-800">{stockProducts.length>0?(stockPage-1)*PER_PAGE+1:0}</span>â€“<span className="font-semibold text-zinc-800">{Math.min(stockPage*PER_PAGE,stockProducts.length)}</span> of <span className="font-semibold text-zinc-800">{stockProducts.length}</span> products
+                      {totalStockPages>1&&<span className="ml-2 text-zinc-400">Â· Page <span className="font-semibold text-zinc-600">{stockPage}</span> of {totalStockPages}</span>}
                     </p>
                     <div className="flex items-center gap-1">
-                      <button onClick={()=>setStockPage(p=>Math.max(1,p-1))} disabled={stockPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                      <button onClick={()=>setStockPage(p=>Math.max(1,p-1))} disabled={stockPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">â† Prev</button>
                       {Array.from({length:totalStockPages},(_,i)=>i+1).filter(n=>n===1||n===totalStockPages||Math.abs(n-stockPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{if(idx>0&&(n as number)-(arr[idx-1] as number)>1)acc.push('...');acc.push(n);return acc;},[]).map((n,i)=>
                         typeof n==='string'
                           ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span>
@@ -1225,7 +1307,7 @@ export default function AdminPanel() {
                     <tbody className="divide-y divide-zinc-100">
                       {filteredOrders.map(o=>(
                         <tr key={o.id} className="hover:bg-zinc-50 cursor-pointer transition-colors" onClick={()=>openOrder(o)}>
-                          <td className="px-4 py-3"><p className="font-mono text-xs font-semibold text-zinc-900">{o.id}</p>{o.tracking&&<p className="text-xs text-zinc-400 truncate max-w-[130px]">🚚 {o.tracking}</p>}</td>
+                          <td className="px-4 py-3"><p className="font-mono text-xs font-semibold text-zinc-900">{o.id}</p>{o.tracking&&<p className="text-xs text-zinc-400 truncate max-w-[130px]">ðŸšš {o.tracking}</p>}</td>
                           <td className="px-4 py-3"><p className="font-medium text-zinc-900 text-xs">{o.customer.name}</p><p className="text-zinc-400 text-xs">{o.customer.email}</p></td>
                           <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">{fmt(o.date)}</td>
                           <td className="px-4 py-3 text-xs text-zinc-600">{o.items.length} item{o.items.length!==1?"s":""}</td>
@@ -1244,11 +1326,11 @@ export default function AdminPanel() {
                 </div>
                 <div className="px-5 py-4 border-t border-zinc-100 bg-zinc-50 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
                   <div className="text-xs text-zinc-500">
-                    Showing <span className="font-semibold text-zinc-900">{filteredOrders.length > 0 ? (orderPage - 1) * 10 + 1 : 0}</span>–<span className="font-semibold text-zinc-900">{Math.min(orderPage * 10, filteredOrdersAll.length)}</span> of <span className="font-semibold text-zinc-900">{filteredOrdersAll.length}</span> orders
-                    {totalOrderPages > 1 && <span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-700">{orderPage}</span> of <span className="font-semibold text-zinc-700">{totalOrderPages}</span></span>}
+                    Showing <span className="font-semibold text-zinc-900">{filteredOrders.length > 0 ? (orderPage - 1) * 10 + 1 : 0}</span>â€“<span className="font-semibold text-zinc-900">{Math.min(orderPage * 10, filteredOrdersAll.length)}</span> of <span className="font-semibold text-zinc-900">{filteredOrdersAll.length}</span> orders
+                    {totalOrderPages > 1 && <span className="ml-2 text-zinc-400">Â· Page <span className="font-semibold text-zinc-700">{orderPage}</span> of <span className="font-semibold text-zinc-700">{totalOrderPages}</span></span>}
                   </div>
                   <div className="flex items-center gap-1">
-                    <button onClick={()=>setOrderPage(p=>Math.max(1,p-1))} disabled={orderPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                    <button onClick={()=>setOrderPage(p=>Math.max(1,p-1))} disabled={orderPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">â† Prev</button>
                     {Array.from({length: totalOrderPages}, (_,i)=>i+1).filter(n=>n===1||n===totalOrderPages||Math.abs(n-orderPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{ if(idx>0&&(n as number)-(arr[idx-1] as number)>1) acc.push('...'); acc.push(n); return acc; },[]).map((n,i)=>
                       typeof n==='string' ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span> :
                       <button key={i} onClick={()=>setOrderPage(n as number)} className={`min-w-[32px] h-8 text-xs font-semibold rounded-lg border transition-colors ${orderPage===n?'bg-rose-500 border-rose-500 text-white':'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'}`}>{n}</button>
@@ -1290,7 +1372,7 @@ export default function AdminPanel() {
                     {selOrder.items.map((item,i)=>(
                       <div key={i} className="flex items-center gap-4 px-6 py-4">
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-zinc-100 flex-shrink-0 border border-zinc-200"><img src={item.image} alt={item.name} className="w-full h-full object-cover"/></div>
-                        <div className="flex-1 min-w-0"><p className="font-medium text-zinc-900 text-sm truncate">{item.name}</p><p className="text-xs text-zinc-400">Qty: {item.qty} × ${item.price.toFixed(2)}</p></div>
+                        <div className="flex-1 min-w-0"><p className="font-medium text-zinc-900 text-sm truncate">{item.name}</p><p className="text-xs text-zinc-400">Qty: {item.qty} Ã— ${item.price.toFixed(2)}</p></div>
                         <p className="font-semibold text-zinc-900 text-sm flex-shrink-0">${(item.price*item.qty).toFixed(2)}</p>
                       </div>
                     ))}
@@ -1336,7 +1418,7 @@ export default function AdminPanel() {
                               <Stars n={r.rating}/>
                               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${REV_STATUS_STYLES[r.status]}`}>{r.status}</span>
                             </div>
-                            <p className="text-xs text-zinc-400 mt-0.5">{r.email} · {fmt(r.date)} · <span className="text-zinc-500 font-medium">{r.productName}</span></p>
+                            <p className="text-xs text-zinc-400 mt-0.5">{r.email} Â· {fmt(r.date)} Â· <span className="text-zinc-500 font-medium">{r.productName}</span></p>
                           </div>
                         </div>
                         {/* Quick actions */}
@@ -1384,11 +1466,11 @@ export default function AdminPanel() {
               {/* Pagination */}
               <div className="flex-shrink-0 mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="text-xs text-zinc-500">
-                  Showing <span className="font-semibold text-zinc-900">{filteredReviews.length > 0 ? (revPage - 1) * 10 + 1 : 0}</span>–<span className="font-semibold text-zinc-900">{Math.min(revPage * 10, filteredReviewsAll.length)}</span> of <span className="font-semibold text-zinc-900">{filteredReviewsAll.length}</span> reviews
-                  {totalRevPages > 1 && <span className="ml-2 text-zinc-400">· Page <span className="font-semibold text-zinc-700">{revPage}</span> of <span className="font-semibold text-zinc-700">{totalRevPages}</span></span>}
+                  Showing <span className="font-semibold text-zinc-900">{filteredReviews.length > 0 ? (revPage - 1) * 10 + 1 : 0}</span>â€“<span className="font-semibold text-zinc-900">{Math.min(revPage * 10, filteredReviewsAll.length)}</span> of <span className="font-semibold text-zinc-900">{filteredReviewsAll.length}</span> reviews
+                  {totalRevPages > 1 && <span className="ml-2 text-zinc-400">Â· Page <span className="font-semibold text-zinc-700">{revPage}</span> of <span className="font-semibold text-zinc-700">{totalRevPages}</span></span>}
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={()=>setRevPage(p=>Math.max(1,p-1))} disabled={revPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">← Prev</button>
+                  <button onClick={()=>setRevPage(p=>Math.max(1,p-1))} disabled={revPage===1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-zinc-200 text-zinc-600 rounded-lg disabled:opacity-40 hover:bg-zinc-100 transition-colors">â† Prev</button>
                   {Array.from({length: totalRevPages}, (_,i)=>i+1).filter(n=>n===1||n===totalRevPages||Math.abs(n-revPage)<=1).reduce<(number|string)[]>((acc,n,idx,arr)=>{ if(idx>0&&(n as number)-(arr[idx-1] as number)>1) acc.push('...'); acc.push(n); return acc; },[]).map((n,i)=>
                     typeof n==='string' ? <span key={i} className="px-2 text-zinc-400 text-xs">…</span> :
                     <button key={i} onClick={()=>setRevPage(n as number)} className={`min-w-[32px] h-8 text-xs font-semibold rounded-lg border transition-colors ${revPage===n?'bg-rose-500 border-rose-500 text-white':'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100'}`}>{n}</button>
@@ -1481,30 +1563,100 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              {/* Contact card (Moved to Left Column) */}
+              {/* Business Info Card */}
               <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
                   <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
                     </svg>
                   </div>
-                  <div><p className="font-bold text-zinc-900 text-sm">Store Info</p><p className="text-xs text-zinc-400">Business details</p></div>
+                  <div><p className="font-bold text-zinc-900 text-sm">Business Info</p><p className="text-xs text-zinc-400">Company and contact details</p></div>
                 </div>
                 <div className="p-6 space-y-2 text-sm text-zinc-600">
                   <p><span className="font-medium text-zinc-800">Business:</span> Kareem Baksh LLC</p>
                   <p><span className="font-medium text-zinc-800">Address:</span> 30 N Gould St #55212, Sheridan, WY 82801, USA</p>
                   <p><span className="font-medium text-zinc-800">Phone:</span> 307-430-1170</p>
-                  <p><span className="font-medium text-zinc-800">Email:</span> admin@kareembaksh.com</p>
+                  <p><span className="font-medium text-zinc-800">Email:</span> {process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@kareembaksh.com"}</p>
                   <p><span className="font-medium text-zinc-800">Site:</span> kareembaksh.com</p>
                 </div>
               </div>
-            </div>
 
+              {/* Account Card */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
+                  <div className="w-9 h-9 bg-zinc-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
+                  <div><p className="font-bold text-zinc-900 text-sm">Account</p><p className="text-xs text-zinc-400">Sign out of the admin panel</p></div>
+                </div>
+                <div className="p-6">
+                  <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            </div>
             {/* Right Column */}
             <div className="space-y-6">
+              {/* Admin Whitelist Management */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-100">
+                  <div className="w-9 h-9 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                  </div>
+                  <div><p className="font-bold text-zinc-900 text-sm">Admin Access</p><p className="text-xs text-zinc-400">Who can log into the admin panel</p></div>
+                </div>
+                <div className="p-6 space-y-3">
+                  <div className="space-y-2">
+                    {allowedAdmins.map(adminEmail => (
+                      <div key={adminEmail} className="flex items-center justify-between bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-200">
+                        <span className="text-sm text-zinc-700 font-medium">{adminEmail}</span>
+                        {allowedAdmins.length > 1 && (
+                          <button
+                            onClick={async () => {
+                              const updated = allowedAdmins.filter(e => e !== adminEmail);
+                              await saveAllowedAdminsFS(updated);
+                              showToast("Admin removed.");
+                            }}
+                            className="text-xs text-red-500 hover:text-red-700 font-semibold"
+                          >Remove</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={newAdminEmail}
+                      onChange={e => setNewAdminEmail(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && e.preventDefault()}
+                      placeholder="new-admin@example.com"
+                      className="flex-1 px-3 py-2 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <button
+                      onClick={async () => {
+                        const em = newAdminEmail.trim().toLowerCase();
+                        if (!em || !em.includes("@")) return;
+                        if (allowedAdmins.map(e => e.toLowerCase()).includes(em)) { showToast("Already in list."); return; }
+                        await saveAllowedAdminsFS([...allowedAdmins, em]);
+                        setNewAdminEmail("");
+                        showToast("Admin added!");
+                      }}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors"
+                    >Add</button>
+                  </div>
+                  <p className="text-xs text-zinc-400">Only emails in this list can sign in. Changes take effect immediately.</p>
+                </div>
+              </div>
+
               {/* Promo Codes Manager */}
-              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col">
                 <div className="p-5 border-b border-zinc-100 flex-shrink-0 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -1538,7 +1690,7 @@ export default function AdminPanel() {
                   </div>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto min-h-0 divide-y divide-zinc-50">
+                <div className="flex-1 overflow-y-auto min-h-0 max-h-[420px] divide-y divide-zinc-50">
                   {paginatedPromos.length === 0 && <p className="text-xs text-zinc-400 text-center py-10">No promo codes found.</p>}
                   {paginatedPromos.map(p => {
                     const status = promoStatus(p);
@@ -1627,11 +1779,11 @@ export default function AdminPanel() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">🗓 Start Date / Time <span className="text-zinc-400 font-normal">optional</span></label>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">ðŸ—“ Start Date / Time <span className="text-zinc-400 font-normal">optional</span></label>
                           <input type="datetime-local" value={promoForm.startAt||""} onChange={e=>setPromoForm(f=>({...f,startAt:e.target.value}))} className="w-full border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">⏰ Expiry Date / Time <span className="text-zinc-400 font-normal">optional</span></label>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">â° Expiry Date / Time <span className="text-zinc-400 font-normal">optional</span></label>
                           <input type="datetime-local" value={promoForm.expiresAt||""} onChange={e=>setPromoForm(f=>({...f,expiresAt:e.target.value}))} className="w-full border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"/>
                         </div>
                       </div>
@@ -1643,8 +1795,152 @@ export default function AdminPanel() {
                       </div>
                     </div>
                     <div className="flex gap-3 mt-5">
-                      <button onClick={()=>setPromoModal(false)} className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
+                      <button onClick={() => {
+                        showToast("Categories are fully managed via Firestore.");
+                      }} className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
                       <button onClick={handleSavePromo} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm transition-colors">{editPromo?"Save Changes":"Create Code"}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Hero Slider Manager */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col" style={{minHeight: "420px", maxHeight: "560px"}}>
+                <div className="px-5 py-4 border-b border-zinc-100 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gradient-to-br from-fuchsia-400 to-fuchsia-600 rounded-xl flex items-center justify-center shadow-sm">
+                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 10h16m-5 8v-8"/></svg>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-zinc-900 text-sm">Hero Slider</p>
+                          <span className="bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-2 py-0.5 rounded-full">{heroSlides.length}</span>
+                        </div>
+                        <p className="text-xs text-zinc-400 mt-0.5">Homepage banner slides - live from Firestore</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {heroSlides.length === 0 && (
+                        <button onClick={seedHeroDefaults} className="bg-zinc-900 hover:bg-zinc-700 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors">Load Defaults</button>
+                      )}
+                      <button onClick={openAddHero} className="bg-fuchsia-500 hover:bg-fuchsia-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+                        New Slide
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto min-h-0">
+                  {heroSlides.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-12 text-zinc-400 px-6 text-center">
+                      <svg className="w-10 h-10 mb-2 text-zinc-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 10h16"/></svg>
+                      <p className="text-xs font-medium">No slides in database yet</p>
+                      <p className="text-xs mt-1">The storefront is showing built-in default slides. Click "Load Defaults" to import them for editing.</p>
+                    </div>
+                  )}
+                  {heroSlides.map((s) => (
+                    <div key={s.id} className="flex items-center gap-3 px-5 py-3 hover:bg-zinc-50 transition-colors border-b border-zinc-50 last:border-0">
+                      <span className="w-6 h-6 rounded-full bg-zinc-100 text-zinc-400 text-xs font-bold flex items-center justify-center flex-shrink-0">{s.id}</span>
+                      {s.image ? (
+                        <img src={s.image} alt="" className="w-14 h-10 rounded-lg object-cover border border-zinc-200 flex-shrink-0" />
+                      ) : (
+                        <div className="w-14 h-10 rounded-lg bg-zinc-100 border border-zinc-200 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-zinc-800 truncate">{s.title} <span className="text-rose-500">{s.highlight}</span></p>
+                        <p className="text-xs text-zinc-400 truncate">{s.badge}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={() => toggleHero(s)} className={`text-[10px] font-bold px-2 py-1 rounded-full transition-colors ${s.active !== false ? "bg-green-100 text-green-700" : "bg-zinc-200 text-zinc-500"}`}>{s.active !== false ? "Visible" : "Hidden"}</button>
+                        <button onClick={() => openEditHero(s)} className="text-xs font-medium text-zinc-600 hover:text-blue-600 hover:bg-blue-50 border border-zinc-200 hover:border-blue-200 px-3 py-1.5 rounded-lg transition-colors">Edit</button>
+                        <button onClick={() => setDeleteHeroId(s.id)} className="text-xs font-medium text-zinc-500 hover:text-red-600 hover:bg-red-50 border border-zinc-200 hover:border-red-200 px-3 py-1.5 rounded-lg transition-colors">Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="px-5 py-3 border-t border-zinc-100 text-[11px] text-zinc-400 flex-shrink-0">Changes appear on the homepage instantly. If every slide is deleted or hidden, the built-in defaults are shown instead.</p>
+              </div>
+
+              {/* Hero Slide Modal */}
+              {heroModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center px-4" onClick={() => setHeroModal(false)}>
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+                  <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 z-10 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-5">
+                      <h3 className="font-bold text-zinc-900 text-base">{editHero ? "Edit Slide" : "New Slide"}</h3>
+                      <button onClick={() => setHeroModal(false)} className="text-zinc-400 hover:text-zinc-700 transition-colors">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Badge</label>
+                          <input type="text" value={heroForm.badge} onChange={e => setHeroForm(f => ({ ...f, badge: e.target.value }))} placeholder="e.g. New Collection" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Background</label>
+                          <select value={heroForm.bg} onChange={e => setHeroForm(f => ({ ...f, bg: e.target.value }))} className="w-full border border-zinc-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400">
+                            {HERO_BG_PRESETS.map(bg => <option key={bg} value={bg}>{bg}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Title <span className="text-red-500">*</span></label>
+                          <input type="text" value={heroForm.title} onChange={e => setHeroForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Premium Womens" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Highlight (rose line) <span className="text-red-500">*</span></label>
+                          <input type="text" value={heroForm.highlight} onChange={e => setHeroForm(f => ({ ...f, highlight: e.target.value }))} placeholder="e.g. Bags and Purses" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 mb-1.5">Description</label>
+                        <textarea value={heroForm.desc} onChange={e => setHeroForm(f => ({ ...f, desc: e.target.value }))} rows={2} placeholder="Short banner description..." className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400 resize-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 mb-1.5">Image <span className="text-red-500">*</span></label>
+                        <div className="flex gap-2">
+                          <input type="text" value={heroForm.image.startsWith("data:") ? "" : heroForm.image} onChange={e => setHeroForm(f => ({ ...f, image: e.target.value }))} disabled={heroForm.image.startsWith("data:")} placeholder="https://paste-image-url" className="flex-1 border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400 disabled:bg-zinc-50" />
+                          {heroForm.image.startsWith("data:") ? (
+                            <button type="button" onClick={() => setHeroForm(f => ({ ...f, image: "" }))} className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap">Remove</button>
+                          ) : (
+                            <button type="button" onClick={() => heroFileRef.current?.click()} className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap">Upload</button>
+                          )}
+                        </div>
+                        <input type="file" ref={heroFileRef} className="hidden" accept="image/*" onChange={handleHeroImgFile} />
+                        {heroForm.image && <img src={heroForm.image} alt="" className="mt-2 h-24 w-full object-cover rounded-xl border border-zinc-200" />}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Primary Button</label>
+                          <input type="text" value={heroForm.cta.label} onChange={e => setHeroForm(f => ({ ...f, cta: { ...f.cta, label: e.target.value } }))} placeholder="Shop Now" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Primary Link</label>
+                          <input type="text" value={heroForm.cta.href} onChange={e => setHeroForm(f => ({ ...f, cta: { ...f.cta, href: e.target.value } }))} placeholder="/products" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Secondary Button (optional)</label>
+                          <input type="text" value={heroForm.secondary?.label ?? ""} onChange={e => setHeroForm(f => ({ ...f, secondary: { label: e.target.value, href: f.secondary?.href ?? "/products" } }))} placeholder="View All" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 mb-1.5">Secondary Link</label>
+                          <input type="text" value={heroForm.secondary?.href ?? ""} onChange={e => setHeroForm(f => ({ ...f, secondary: { label: f.secondary?.label ?? "View All", href: e.target.value } }))} placeholder="/products" className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-fuchsia-400" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
+                        <label className="text-xs font-medium text-zinc-700 flex-1">Visible on storefront</label>
+                        <button onClick={() => setHeroForm(f => ({ ...f, active: !f.active }))} className={`w-10 h-6 rounded-full transition-colors relative ${heroForm.active ? "bg-rose-500" : "bg-zinc-300"}`}>
+                          <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${heroForm.active ? "right-0.5" : "left-0.5"}`} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 mt-5">
+                      <button onClick={() => setHeroModal(false)} className="flex-1 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
+                      <button onClick={handleSaveHero} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm transition-colors">{editHero ? "Save Changes" : "Create Slide"}</button>
                     </div>
                   </div>
                 </div>
@@ -1670,13 +1966,7 @@ export default function AdminPanel() {
                       </div>
                     </div>
                     <button
-                      onClick={() => {
-                        const staticCats = categories.filter(c => c !== "All");
-                        const custom = customCategories.filter(c => !staticCats.includes(c));
-                        const merged = [...staticCats, ...custom];
-                        saveCustomCats(merged);
-                        showToast("Default categories restored.");
-                      }}
+                      onClick={() => showToast("Categories are fully managed via Firestore.")}
                       className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-teal-600 font-medium border border-zinc-200 hover:border-teal-300 px-3 py-1.5 rounded-lg transition-colors"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -1741,7 +2031,7 @@ export default function AdminPanel() {
                             return (
                               <div key={i} className="relative group">
                                 {isVideo ? <video src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" muted playsInline /> : <img src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" />}
-                                <button type="button" onClick={() => setCatMgrMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                                <button type="button" onClick={() => setCatMgrMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">âœ•</button>
                               </div>
                             );
                           })}
@@ -1777,8 +2067,8 @@ export default function AdminPanel() {
                     </div>
                   )}
                   {customCategories.map((cat, idx) => {
-                    const isDefault = categories.filter(c => c !== "All").includes(cat);
-                    const meta = categoryMeta[cat] || STATIC_CATEGORY_META[cat];
+                    const isDefault = false;
+                    const meta = categoryMeta[cat] || {};
                     return (
                       <div key={cat} className="flex items-start gap-3 px-5 py-3 hover:bg-zinc-50 transition-colors border-b border-zinc-50 last:border-0">
                         {/* Index + image */}
@@ -1838,7 +2128,7 @@ export default function AdminPanel() {
                                     return (
                                       <div key={i} className="relative group">
                                         {isVideo ? <video src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" muted playsInline /> : <img src={src} className="w-16 h-16 object-cover rounded-lg border border-zinc-200" />}
-                                        <button type="button" onClick={() => setCatMgrEditMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                                        <button type="button" onClick={() => setCatMgrEditMedia(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">âœ•</button>
                                       </div>
                                     );
                                   })}
@@ -1947,6 +2237,20 @@ export default function AdminPanel() {
             <div className="flex gap-3">
               <button onClick={()=>setDeleteCatId(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
               <button onClick={()=>deleteCustomCat(deleteCatId)} className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Delete hero slide confirm */}
+      {deleteHeroId !== null && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-2xl p-7 w-full max-w-sm shadow-2xl">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4"><svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.07 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg></div>
+            <h3 className="font-bold text-zinc-900 text-lg mb-2">Delete Slide #{deleteHeroId}?</h3>
+            <p className="text-sm text-zinc-500 mb-6">This removes the slide from Firestore. If no slides remain, the storefront falls back to the built-in defaults.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteHeroId(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors">Cancel</button>
+              <button onClick={() => removeHero(deleteHeroId)} className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">Delete</button>
             </div>
           </div>
         </div>

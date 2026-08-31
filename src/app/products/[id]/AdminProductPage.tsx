@@ -7,7 +7,8 @@ import ProductImages from "./ProductImages";
 import ProductCard from "@/components/ProductCard";
 import AddToCartSection from "./AddToCartSection";
 import ReviewForm from "./ReviewForm";
-import { products as staticProducts, getProductById } from "@/lib/products";
+import { getProductByIdServer } from "@/lib/serverProducts";
+import { loadProductsFS } from "@/lib/firestore";
 import type { Product } from "@/lib/types";
 
 const PROD_KEY = "kb_admin_data";
@@ -15,14 +16,11 @@ const PROD_KEY = "kb_admin_data";
 function mergeProducts(): Product[] {
   try {
     const raw = localStorage.getItem(PROD_KEY);
-    if (!raw) return staticProducts;
+    if (!raw) return [];
     const d = JSON.parse(raw);
-    const base = staticProducts
-      .filter((p) => !(d.deleted || []).includes(p.id))
-      .map((p) => ({ ...p, ...(d.overrides?.[p.id] ?? {}) }));
-    return [...base, ...(d.added || [])];
+    return [...(d.added || [])];
   } catch {
-    return staticProducts;
+    return [];
   }
 }
 
@@ -36,9 +34,6 @@ export default function AdminProductPage({ productId }: Props) {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
 
   useEffect(() => {
-    const all = mergeProducts();
-    setAllProducts(all);
-
     // Check visibility
     try {
       const raw = localStorage.getItem(PROD_KEY);
@@ -53,8 +48,11 @@ export default function AdminProductPage({ productId }: Props) {
       }
     } catch {}
 
-    const found = all.find((p) => p.id === productId);
-    setProduct(found ?? null);
+    loadProductsFS().then((allProducts) => {
+      setAllProducts(allProducts);
+      const found = allProducts.find((p: import("@/lib/types").Product) => p.id === productId);
+      setProduct(found ?? null);
+    });
 
     // Always scroll to top
     window.scrollTo({ top: 0, behavior: "instant" });

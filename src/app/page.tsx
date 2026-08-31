@@ -1,18 +1,17 @@
-"use client";
-
 import Link from "next/link";
-import Image from "next/image";
 import ProductCard from "@/components/ProductCard";
 import HeroSlider from "@/components/HeroSlider";
 import NewsletterSection from "@/components/NewsletterSection";
 import MediaCarousel from "@/components/MediaCarousel";
-import { useAdminProducts, useAdminCategories, useAdminCategoryMeta } from "@/hooks/useAdminProducts";
-import { STATIC_CATEGORY_META } from "@/lib/products";
+import { getProductsServer, getCategoriesServer, getCategoryMetaServer } from "@/lib/serverProducts";
 
-export default function Home() {
-  const allProducts = useAdminProducts();
-  const allCategories = useAdminCategories();
-  const customMeta = useAdminCategoryMeta();
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const allProducts = await getProductsServer();
+  const allCategories = await getCategoriesServer();
+  const customMeta = await getCategoryMetaServer();
+
   const featured = allProducts
     .filter(p => p.badge === "Hot" || p.badge === "Popular")
     .sort((a, b) => {
@@ -24,6 +23,7 @@ export default function Home() {
       return 0;
     })
     .slice(0, 8);
+
   const shopCategories = allCategories.filter((c) => c !== "All");
 
   return (
@@ -40,7 +40,7 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {shopCategories.map((cat) => {
-              const meta = customMeta[cat] || STATIC_CATEGORY_META[cat] || { image: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=600&q=80", desc: "View products" };
+              const meta = customMeta[cat] || { image: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=600&q=80", desc: "View products" };
               const allMedia = [meta.image, ...(meta.media || [])].filter(Boolean);
               return (
                 <Link
@@ -78,7 +78,7 @@ export default function Home() {
               href="/products"
               className="text-sm font-semibold text-rose-500 hover:text-rose-600 flex items-center gap-1"
             >
-              View all 58
+              View all {allProducts.length}
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
@@ -174,7 +174,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold text-white mb-3">Everything You Need, One Store</h2>
           <p className="text-rose-100 mb-8 max-w-lg mx-auto">
-            From women&apos;s fashion bags to home essentials and outdoor gear — 58 premium products waiting for you.
+            From women&apos;s fashion bags to home essentials and outdoor gear — {allProducts.length} premium products waiting for you.
           </p>
           <Link
             href="/products"

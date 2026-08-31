@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/components/CartProvider";
+import { AuthProvider } from "@/lib/authContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
@@ -16,11 +17,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${inter.variable} h-full`}>
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-white antialiased font-sans">
-        <CartProvider>
-          <Navbar />
-          <div className="flex-1">{children}</div>
-          <Footer />
-        </CartProvider>
+        <AuthProvider>
+          <CartProvider>
+            <Navbar />
+            <div className="flex-1">{children}</div>
+            <Footer />
+          </CartProvider>
+        </AuthProvider>
       </body>
     </html>
   );
